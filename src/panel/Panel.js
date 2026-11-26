@@ -16,7 +16,8 @@ export default function Panel({ store }) {
   const [pid, setPid] = useState(null); // open patient profile
   const [modal, setModal] = useState(null); // { type, ... }
   const [editor, setEditor] = useState(null); // DocEditor start
-  const go = (p) => { setPage(p); setPid(null); document.querySelector('.d-main')?.scrollTo(0, 0); };
+  const [navOpen, setNavOpen] = useState(false); // mobile drawer
+  const go = (p) => { setPage(p); setPid(null); setNavOpen(false); document.querySelector('.d-main')?.scrollTo(0, 0); };
   const open = (id) => { if (!id) return; setPage('pacientes'); setPid(id); document.querySelector('.d-main')?.scrollTo(0, 0); };
   const patient = patients.find((p) => p.id === pid);
   // Real patients (created through the API) join the demo list; their link status comes from the server.
@@ -46,7 +47,8 @@ export default function Panel({ store }) {
 
   return (
     <div className={`desk ${prefs.theme === 'dark' ? 'theme-dark' : ''} ${prefs.compact ? 'compact' : ''}`} style={{ '--accent': prefs.accent }}>
-      <aside className="side">
+      {navOpen && <button className="side-scrim" aria-label="Fechar menu" onClick={() => setNavOpen(false)} />}
+      <aside className={`side ${navOpen ? 'open' : ''}`} id="side-nav">
         <div className="brand"><span className="brand-mark"><Icon name="logo" size={18} stroke={2.2} /></span> KiWave <span className="brand-sub">Consultório</span></div>
         {NAV.map((g) => (
           <nav key={g.group} aria-label={g.group}>
@@ -66,6 +68,7 @@ export default function Panel({ store }) {
       </aside>
       <div className="d-col">
         <header className="topbar">
+          <button className="icon-btn menu-btn" aria-label="Abrir menu" aria-controls="side-nav" aria-expanded={navOpen} onClick={() => setNavOpen(true)}><Icon name="menu" size={20} /></button>
           <p className="crumb">{patient ? <><button className="link sm" onClick={() => go('pacientes')}>Pacientes</button> / {patient.name}</> : CRUMB[page]}</p>
           <SearchBox patients={patients} open={open} />
           <Notifications store={store} open={open} go={go} />

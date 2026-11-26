@@ -24,4 +24,4 @@ if (!pending) await db.insert('patients', { psychologist_id: psi.id, name: patie
 else if (!pending.user_id) await db.update('patients', `id=eq.${pending.id}`, { link_code: code, code_expires_at: expires });
 
 if (pending?.user_id) console.log(`- paciente: ${patientName} já vinculado.`);
-else console.log(`- paciente: ${patientName} aguardando vínculo · código ${code} (vale ${CODE_DAYS} dias) · ${process.env.APP_URL || 'http://localhost:3000'}/?codigo=${code}#paciente`);
+else console.log(`- paciente: ${patientName} aguardando vínculo · código ${code} (vale ${CODE_DAYS} dias) · ${process.env.APP_URL || 'http://localhost:3000'}/app?codigo=${code}`);

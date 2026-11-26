@@ -92,7 +92,6 @@ export default function Login({ role, onLogin }) {
   if (role === 'paciente') {
     return (
       <div className="phone login-phone" aria-label="Entrar no app do paciente">
-        <div className="phone-status"><span>09:41</span><span className="notch" /><span>5G ▮▮▮</span></div>
         <main className="phone-scroll">
           <div className="login-brand"><span className="brand-mark lg"><Icon name="logo" size={26} stroke={2.2} /></span><b>KiWave</b></div>
           {mode === 'login'
@@ -137,14 +136,13 @@ export function LinkScreen({ user, onLinked, onLogout }) {
     setBusy(true); setError('');
     try {
       const r = await api.link(clean);
-      window.history.replaceState(null, '', `${window.location.pathname}#paciente`); // drop ?codigo from the URL
+      window.history.replaceState(null, '', '/app'); // drop ?codigo from the URL
       toast(`Vinculado a ${r.psychologistName}`);
       onLinked(r.user);
     } catch (err) { setError(err.message); setPreview(null); } finally { setBusy(false); }
   };
   return (
     <div className="phone login-phone" aria-label="Vincular à psicóloga">
-      <div className="phone-status"><span>09:41</span><span className="notch" /><span>5G ▮▮▮</span></div>
       <main className="phone-scroll">
         <div className="login-brand"><span className="brand-mark lg"><Icon name="logo" size={26} stroke={2.2} /></span><b>KiWave</b></div>
         <form className="login-form" onSubmit={check} noValidate>

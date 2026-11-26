@@ -4,6 +4,7 @@ import './App2.css';
 import './App3.css';
 import './App4.css';
 import './App5.css';
+import './App6.css';
 import Patient from './patient/Patient';
 import Panel from './panel/Panel';
 import Login, { LinkScreen } from './Login';
@@ -11,13 +12,20 @@ import { Toaster, toast } from './ui';
 import { api } from './api';
 import { INITIAL_PATIENTS, INITIAL_EMOTION_LOG, INITIAL_SLEEP, INITIAL_PATIENT_PREFS, INITIAL_PANEL_PREFS, INITIAL_NOTAS, INITIAL_DOCS, INITIAL_TEMPLATES, INITIAL_EVENTS, ME } from './data';
 
-const VIEWS = [['paciente', 'App do paciente'], ['psicologa', 'Painel da psicóloga']];
+// Two real entry points: /app (patient, mobile) and /painel (psychologist, desktop).
+const viewFromPath = () => (window.location.pathname.startsWith('/painel') ? 'psicologa' : 'paciente');
 const GOOGLE_MSG = { conectado: ['Google Agenda conectado', 'ok'], cancelado: ['Conexão com o Google cancelada', 'warn'], erro: ['Não foi possível conectar o Google Agenda. Tente de novo.', 'warn'] };
 
 // initialSessions: tests pass logged-in users and skip the API. undefined = still checking, null = logged out.
 export default function App({ initialSessions }) {
-  const [view, setView] = useState(() => (window.location.hash === '#psicologa' ? 'psicologa' : 'paciente'));
-  useEffect(() => { window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${view}`); }, [view]);
+  const [view, setView] = useState(viewFromPath);
+  useEffect(() => {
+    if (window.location.pathname === '/') window.history.replaceState(null, '', `/app${window.location.search}`);
+    const onPop = () => setView(viewFromPath());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+  useEffect(() => { document.title = view === 'psicologa' ? 'KiWave · Consultório' : 'KiWave'; }, [view]);
 
   const [sessions, setSessions] = useState(initialSessions ?? { paciente: undefined, psicologa: undefined });
   const setSession = (role, user) => setSessions((s) => ({ ...s, [role]: user }));
@@ -27,7 +35,7 @@ export default function App({ initialSessions }) {
     const g = new URLSearchParams(window.location.search).get('google'); // back from the Google consent screen
     if (g && GOOGLE_MSG[g]) {
       toast(...GOOGLE_MSG[g]);
-      window.history.replaceState(null, '', `${window.location.pathname}#psicologa`);
+      window.history.replaceState(null, '', '/painel');
     }
   }, [initialSessions]);
   const logout = async (role) => {
@@ -88,11 +96,6 @@ export default function App({ initialSessions }) {
 
   return (
     <div className={`shell shell-${view}`}>
-      <div className="switcher" role="tablist" aria-label="Interface">
-        {VIEWS.map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={view === k} className={view === k ? 'on' : ''} onClick={() => setView(k)}>{l}</button>
-        ))}
-      </div>
       {view === 'paciente' ? <div className="stage">{patientScreen}</div> : panelScreen}
       <Toaster />
     </div>

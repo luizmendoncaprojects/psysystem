@@ -57,7 +57,7 @@ function issue(res, status, s, extra = {}) {
   send(res, status, { user: publicUser(full), ...extra }, { 'Set-Cookie': setCookie(s.role, sign(full, SECRET), SESSION_DAYS * 86400) });
 }
 
-const linkUrl = (code) => `${APP_URL}/?codigo=${code}#paciente`;
+const linkUrl = (code) => `${APP_URL}/app?codigo=${code}`;
 const codeExpiry = () => new Date(Date.now() + CODE_DAYS * 864e5).toISOString();
 const patientView = (p) => ({
   id: p.id, name: p.name, linked: Boolean(p.user_id), linkedAt: p.linked_at, createdAt: p.created_at,
@@ -187,7 +187,7 @@ const routes = {
 
   // Google redirects the browser here (directly to the API port).
   'GET /api/google/callback': async (req, res, url) => {
-    const back = (status) => { res.writeHead(302, { Location: `${APP_URL}/?google=${status}#psicologa` }); res.end(); };
+    const back = (status) => { res.writeHead(302, { Location: `${APP_URL}/painel?google=${status}` }); res.end(); };
     if (url.searchParams.get('error')) return back('cancelado');
     try { await google.handleCallback({ code: url.searchParams.get('code'), state: url.searchParams.get('state') }); back('conectado'); } catch (e) {
       console.error('[google callback]', e.message);

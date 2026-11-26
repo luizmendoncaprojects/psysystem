@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import App from './App';
 
 const SESSIONS = {
@@ -12,26 +12,31 @@ const fakeApi = (routes) => jest.fn(async (url, opts = {}) => {
   return { ok: status < 400, status, json: async () => (typeof body === 'function' ? body(JSON.parse(opts.body || '{}')) : body) };
 });
 
-beforeEach(() => { window.location.hash = ''; delete global.fetch; });
+// Navigate like the browser does: change the path and fire popstate (App listens to it).
+const go = (path) => act(() => { window.history.pushState(null, '', path); window.dispatchEvent(new PopStateEvent('popstate')); });
+const toPanel = () => go('/painel');
+const toApp = () => go('/app');
+
+beforeEach(() => { window.history.replaceState(null, '', '/app'); delete global.fetch; });
 
 test('psychologist turns off Diário and it disappears from the patient app', () => {
   render(<App initialSessions={SESSIONS} />);
   expect(screen.getByRole('button', { name: 'Diário' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: 'Painel da psicóloga' }));
+  toPanel();
   fireEvent.click(screen.getByRole('button', { name: /Pacientes/ }));
   fireEvent.change(screen.getByLabelText('Buscar por nome ou CID'), { target: { value: 'Luiz' } });
   fireEvent.click(screen.getByText('Luiz Mendonça'));
   fireEvent.click(screen.getByRole('tab', { name: 'Permissões do app' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Diário' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Assuntos da sessão' }));
-  fireEvent.click(screen.getByRole('tab', { name: 'App do paciente' }));
+  toApp();
   expect(screen.queryByRole('button', { name: 'Diário' })).not.toBeInTheDocument();
 });
 
 test('renders patient app and switches to panel', () => {
   render(<App initialSessions={SESSIONS} />);
   expect(screen.getByText('Olá, Luiz')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('tab', { name: 'Painel da psicóloga' }));
+  toPanel();
   expect(screen.getByText('Bom dia, Débora')).toBeInTheDocument();
 });
 
@@ -60,7 +65,7 @@ test('profile opens settings and dark theme applies to the phone', () => {
 
 test('psychologist uploads a PDF invoice and it shows up for the patient; non-PDF is refused', () => {
   render(<App initialSessions={SESSIONS} />);
-  fireEvent.click(screen.getByRole('tab', { name: 'Painel da psicóloga' }));
+  toPanel();
   fireEvent.click(screen.getByRole('button', { name: /Documentos e notas/ }));
   fireEvent.click(screen.getByRole('tab', { name: 'Notas fiscais' }));
   fireEvent.click(screen.getByRole('button', { name: /Enviar nota/ }));
@@ -70,13 +75,11 @@ test('psychologist uploads a PDF invoice and it shows up for the patient; non-PD
   fireEvent.change(input, { target: { files: [new File(['%PDF'], 'nfse-000190.pdf', { type: 'application/pdf' })] } });
   fireEvent.change(screen.getByLabelText(/Nº da nota/), { target: { value: '000190' } });
   fireEvent.click(screen.getByRole('button', { name: /Enviar ao app do paciente/ }));
-  fireEvent.click(screen.getByRole('tab', { name: 'App do paciente' }));
+  toApp();
   fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));
   expect(screen.getByText(/Nota 000190/)).toBeInTheDocument();
 });
 
-const toPanel = () => fireEvent.click(screen.getByRole('tab', { name: 'Painel da psicóloga' }));
-const toApp = () => fireEvent.click(screen.getByRole('tab', { name: 'App do paciente' }));
 
 test('new patient: psychologist registers only the name and gets a link code', async () => {
   global.fetch = fakeApi({
@@ -146,7 +149,7 @@ test('patient logs in, enters the link code, confirms and reaches the app', asyn
 
 test('psychologist login shows the API error message', async () => {
   global.fetch = fakeApi({ 'GET /api/auth/me': [401, {}], 'POST /api/auth/login': [401, { error: 'E-mail ou senha incorretos.' }] });
-  window.location.hash = '#psicologa';
+  window.history.replaceState(null, '', '/painel');
   render(<App />);
   fireEvent.change(await screen.findByLabelText('E-mail'), { target: { value: 'deboramenpsi@gmail.com' } });
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'errada-errada' } });

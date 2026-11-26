@@ -51,7 +51,6 @@ export default function Patient({ store }) {
 
   return (
     <div className={cls} style={{ '--accent': prefs.accent }} aria-label="App do paciente">
-      <div className="phone-status"><span>09:41</span><span className="notch" /><span>5G ▮▮▮</span></div>
       <main className="phone-scroll" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} data-testid="patient-content">
         <div key={cur} className={`tab-pane in-${dir < 0 ? 'left' : dir > 0 ? 'right' : 'none'}`}>
           {cur === 'hoje' && <Hoje {...ctx} />}
