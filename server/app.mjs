@@ -229,6 +229,7 @@ export async function handler(req, res) {
     const status = e.status && e.status < 600 ? e.status : 500;
     const id = crypto.randomBytes(4).toString('hex');
     if (status >= 500) console.error(`[api ${id}]`, e);
-    if (!res.headersSent) fail(res, status, status >= 500 ? `Erro interno (${id}).` : e.message);
+    // 502 = a dependency (Supabase/Google) is misconfigured or down: the message names it and holds no secrets.
+    if (!res.headersSent) fail(res, status, status === 502 ? `${e.message} (${id})` : status >= 500 ? `Erro interno (${id}).` : e.message);
   }
 }

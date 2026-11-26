@@ -1,21 +1,33 @@
 // Supabase over plain fetch: Auth (GoTrue) for passwords, PostgREST for tables.
 // The service role key bypasses RLS: it is read only on the server and never sent to the browser.
 
-const url = () => process.env.SUPABASE_URL;
-const publishable = () => process.env.SUPABASE_PUBLISHABLE_KEY;
-const service = () => process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Values pasted into hosting dashboards often carry quotes, spaces or a trailing slash.
+const clean = (v) => (v ?? '').trim().replace(/^["']|["']$/g, '').trim();
+const url = () => clean(process.env.SUPABASE_URL).replace(/\/+$/, '');
+const publishable = () => clean(process.env.SUPABASE_PUBLISHABLE_KEY);
+const service = () => clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 async function call(path, { key, bearer, method = 'GET', body, headers = {} } = {}) {
-  const r = await fetch(`${url()}${path}`, {
-    method,
-    headers: { apikey: key, Authorization: `Bearer ${bearer || key}`, 'Content-Type': 'application/json', ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  let r;
+  try {
+    r = await fetch(`${url()}${path}`, {
+      method,
+      headers: { apikey: key, Authorization: `Bearer ${bearer || key}`, 'Content-Type': 'application/json', ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch (cause) {
+    throw Object.assign(new Error(`Supabase inacessível em ${url() || '(SUPABASE_URL vazio)'}: ${cause.message}`), { status: 502, cause });
+  }
   const text = await r.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch {
+    // Not JSON: wrong SUPABASE_URL (HTML page) or a proxy error. Surface it instead of a bare crash.
+    throw Object.assign(new Error(`Supabase respondeu ${r.status} sem JSON em ${path.split('?')[0]}. Confira SUPABASE_URL.`), { status: 502 });
+  }
   if (!r.ok) {
     const e = new Error(data?.msg || data?.message || data?.error_description || data?.error || `Supabase ${r.status}`);
-    e.status = r.status;
+    // 401/403 from Supabase with the server key means a wrong key: a server problem, not the user's.
+    e.status = (r.status === 401 || r.status === 403) && key === service() && !path.startsWith('/auth/v1/token') ? 502 : r.status;
     throw e;
   }
   return data;
