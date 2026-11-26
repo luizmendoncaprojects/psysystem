@@ -1,0 +1,49 @@
+/* ============ v6: login, vínculo, paginação, Google ============ */
+.boot { min-height: 60vh; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+
+/* pagination */
+.pager { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 4px 0; margin-top: 4px; border-top: 1px solid var(--line); }
+.pg { min-width: 34px; height: 34px; padding: 0 8px; border-radius: 10px; font-size: 13px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.pg:hover { background: var(--surface-2); }
+.pg.on { background: var(--accent); color: #fff; }
+.table-wrap + .pager { margin: 0 0 -6px; padding: 12px 0 0; }
+
+/* login: shared form */
+.login-form { display: flex; flex-direction: column; gap: 14px; width: 100%; max-width: 380px; }
+.login-title { font-family: var(--display); font-size: 28px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; margin: 6px 0 4px; }
+.login-form .field input { width: 100%; min-height: 46px; font-size: 15px; }
+.login-form .link.center { align-self: center; }
+.login-foot { justify-content: center; margin-top: 4px; }
+.pw { position: relative; display: block; }
+.pw input { padding-right: 46px !important; }
+.pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; display: grid; place-items: center; color: var(--muted); border-radius: 10px; }
+.pw-toggle:hover { color: var(--ink); }
+.consent { display: flex; gap: 10px; align-items: flex-start; color: var(--ink-2); }
+.consent input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+
+/* login: patient (phone) */
+.login-phone .phone-scroll { justify-content: flex-start; padding-top: 24px; }
+.login-brand { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-size: 24px; margin-bottom: 8px; }
+.brand-mark.lg { width: 44px; height: 44px; border-radius: 14px; color: #fff; display: grid; place-items: center; }
+
+/* login: psychologist (desk) */
+.login-desk { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, 460px) 1fr; background: var(--bg); }
+.login-hero { background: radial-gradient(500px 300px at 100% 0%, color-mix(in srgb, var(--accent) 45%, #16141d) 0%, transparent 70%), color-mix(in srgb, var(--accent) 24%, #16141d); color: #fff; padding: 32px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; }
+.login-hero .brand { padding: 0; }
+.login-hero .brand-mark { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 65%, white), var(--accent)); }
+.login-points { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.login-points li { display: flex; gap: 10px; align-items: center; color: rgba(255, 255, 255, .8); font-size: 15px; }
+.login-main { display: grid; place-items: center; padding: 32px 16px; }
+@media (max-width: 860px) { .login-desk { grid-template-columns: 1fr; } .login-hero { display: none; } }
+
+/* link code */
+.code-input { font: 700 26px/1 ui-monospace, 'Cascadia Mono', monospace; letter-spacing: .35em; text-align: center; text-transform: uppercase; }
+.link-preview { padding: 16px; border-radius: 14px; background: var(--accent-soft); display: flex; flex-direction: column; gap: 4px; }
+.link-card { padding: 16px; border-radius: 14px; border: 1px dashed var(--line-strong); background: var(--surface-2); }
+.link-card.compact { padding: 12px 14px; margin-top: 10px; }
+.link-code { font: 700 30px/1.1 ui-monospace, 'Cascadia Mono', monospace; letter-spacing: .3em; color: var(--ink); margin-top: 4px; }
+.link-banner { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); background: var(--warn-soft); }
+.link-banner > .row { color: var(--warn); }
+
+/* Google events on the grid */
+.ev-google { border-left-style: dashed; }

@@ -1,0 +1,60 @@
+/* ============ v5: layout review fixes ============ */
+/* interface switcher: top center on the desk, away from page content */
+.shell-psicologa .switcher { top: 10px; bottom: auto; padding: 3px; }
+.shell-psicologa .switcher button { padding: 6px 14px; }
+@media (max-width: 1180px) { .shell-psicologa .switcher { top: auto; bottom: 16px; left: auto; right: 16px; transform: none; } }
+
+/* headers: title/description grows, actions stay on the right */
+.page-head > div:first-child { flex: 1 1 420px; min-width: 0; }
+.page-head > div:first-child .muted { max-width: 72ch; }
+.panel-head > div:first-child { flex: 1 1 240px; min-width: 0; }
+
+/* tables: fit 1440 without horizontal scroll */
+.table th, .table td { padding-left: 14px; padding-right: 14px; }
+.table th:first-child, .table td:first-child { padding-left: 20px; }
+.table th:last-child, .table td:last-child { padding-right: 20px; }
+.table th.right, .table td.right { text-align: right; }
+.use { min-width: 96px; }
+
+/* templates: one row of six on desktop */
+.templates { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 1200px) { .templates { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* patient: invoice rows */
+.nf-row { display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.nf-row:last-child { border-bottom: 0; }
+.nf-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.nf-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+.nf-actions .btn-ghost-sm { padding-left: 0; }
+.tnum-r { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* patient: touch targets ≥ 36–44px inside the phone */
+.phone .seg-sm button { min-height: 36px; }
+.phone .icon-btn { min-width: 40px; min-height: 40px; }
+
+/* real phone width: drop the fake status bar/notch */
+@media (max-width: 760px) {
+  .phone-status { display: none; }
+  .phone-scroll { padding-top: 16px; }
+}
+
+/* short windows: phone starts below the switcher instead of overlapping it */
+@media (max-height: 860px) and (min-width: 761px) { .stage { place-items: start center; padding-top: 64px; } .phone { max-height: none; } }
+.table td:first-child { white-space: normal; }
+.grid-3-2 .table td:first-child { min-width: 180px; }
+
+/* accent drives every brand-tinted surface (was hardcoded violet) */
+.phone, .desk { --night: color-mix(in srgb, var(--accent) 24%, #16141d); --night-2: color-mix(in srgb, var(--accent) 34%, #1d1a26); }
+.theme-dark { --night: color-mix(in srgb, var(--accent) 18%, #1b1925); }
+.brand-mark { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 65%, white), var(--accent)); }
+.side-item.on { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--accent) 60%, white); }
+.btn-primary { box-shadow: 0 1px 0 rgba(255,255,255,.2) inset, 0 4px 12px color-mix(in srgb, var(--accent) 28%, transparent); }
+.progress span, .sb-track span { background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, white)); }
+.sb-track span { background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 60%, white), var(--accent)); }
+.linechart .area { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
+.sleep-bar span { background: var(--accent); }
+.session-card { background: radial-gradient(400px 200px at 100% 0%, color-mix(in srgb, var(--accent) 45%, #16141d) 0%, transparent 70%), var(--night); }
+.copilot-hero { background: radial-gradient(600px 300px at 90% 0%, color-mix(in srgb, var(--accent) 55%, #16141d) 0%, transparent 60%), radial-gradient(500px 300px at 0% 100%, var(--night-2) 0%, transparent 60%), var(--night); }
+.prompt-card { background: linear-gradient(150deg, var(--accent-soft) 0%, #fdf3ea 100%); }
+.theme-dark .prompt-card { background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 22%, #1f1c29), #33261f); }
+.card-soft { background: linear-gradient(160deg, var(--surface) 0%, var(--accent-soft) 160%); }
