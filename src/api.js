@@ -16,7 +16,7 @@ async function req(path, { method = 'GET', body } = {}) {
     throw Object.assign(new Error('Servidor fora do ar. Rode “npm run api” e tente de novo.'), { status: 0 });
   }
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw Object.assign(new Error(data.error || (r.status === 504 || r.status === 502 ? 'Servidor fora do ar. Rode “npm run api” e tente de novo.' : 'Algo deu errado.')), { status: r.status });
+  if (!r.ok) throw Object.assign(new Error(data.error || (r.status === 504 || r.status === 502 ? 'Servidor fora do ar. Rode “npm run api” e tente de novo.' : `Algo deu errado (erro ${r.status}).`)), { status: r.status });
   return data;
 }
 

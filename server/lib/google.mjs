@@ -14,7 +14,7 @@ const SCOPES = ['openid', 'email', 'https://www.googleapis.com/auth/calendar.eve
 const cfg = () => ({
   clientId: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  redirectUri: process.env.GOOGLE_REDIRECT_URI || `http://localhost:${process.env.API_PORT || 4000}/api/google/callback`,
+  redirectUri: process.env.GOOGLE_REDIRECT_URI || (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/google/callback` : `http://localhost:${process.env.API_PORT || 4000}/api/google/callback`),
   secret: process.env.SESSION_SECRET,
 });
 export const isConfigured = () => Boolean(cfg().clientId && cfg().clientSecret);
