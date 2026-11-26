@@ -25,3 +25,6 @@ yarn-error.log*
 # local secrets and server data
 .env
 server/data/
+
+# diagnostic logs
+*.log
