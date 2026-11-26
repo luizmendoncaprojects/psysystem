@@ -50,6 +50,11 @@ const requireRole = (req, res, role) => {
   if (!s) fail(res, 401, 'Faça login para continuar.');
   return s;
 };
+// Client IP for rate limiting. On Vercel req.socket is null once the body is read, and the
+// platform's x-forwarded-for is trustworthy; locally that header could be spoofed, so use the socket.
+const clientIp = (req) => (process.env.VERCEL
+  ? String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers['x-real-ip'] || '')
+  : req.socket?.remoteAddress) || 'unknown';
 const publicUser = (s) => ({ id: s.uid, role: s.role, name: s.name, email: s.email, patientId: s.patientId ?? null, psychologistId: s.psychologistId ?? null });
 function issue(res, status, s, extra = {}) {
   const full = { uid: s.uid, role: s.role, name: s.name, email: s.email, patientId: s.patientId ?? null, psychologistId: s.psychologistId ?? null, exp: Date.now() + SESSION_DAYS * 864e5 };
@@ -79,7 +84,7 @@ const routes = {
     const { role, email, password } = await body(req);
     if (!ROLES.includes(role) || typeof email !== 'string' || typeof password !== 'string' || !email || !password) return fail(res, 400, 'Informe e-mail e senha.');
     const mail = email.trim().toLowerCase();
-    if (!loginLimit(`${mail}|${req.socket.remoteAddress}`)) return fail(res, 429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
+    if (!loginLimit(`${mail}|${clientIp(req)}`)) return fail(res, 429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
     let user;
     try { ({ user } = await auth.signIn(mail, password)); } catch (e) {
       if (e.status === 400) return fail(res, 401, 'E-mail ou senha incorretos.');
@@ -95,7 +100,7 @@ const routes = {
   // Patient creates their own account (name, contact, CPF, birth date). Logged in right away, still unlinked.
   // shortcut: email_confirm=true skips e-mail verification; turn on Supabase confirmation e-mails before launch.
   'POST /api/auth/signup': async (req, res) => {
-    if (!signupLimit(req.socket.remoteAddress)) return fail(res, 429, 'Muitos cadastros deste dispositivo. Tente mais tarde.');
+    if (!signupLimit(clientIp(req))) return fail(res, 429, 'Muitos cadastros deste dispositivo. Tente mais tarde.');
     const { data, error } = validateSignup(await body(req));
     if (error) return fail(res, 400, error);
     let user;
