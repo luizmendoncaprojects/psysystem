@@ -59,3 +59,27 @@
   .sleep-list li, .emo-bars li { grid-template-columns: 1fr auto; }
   .sleep-list li > :nth-child(2), .sleep-list .sleep-bar { display: none; }
 }
+
+/* ---------- Auth screens (login, sign-up, link): split on desktop, single column on mobile ---------- */
+.login-desk { grid-template-columns: minmax(380px, 46%) 1fr; }
+.login-main { align-content: center; }
+.login-col { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; }
+.login-col .login-form { max-width: none; }
+.login-hero { padding: 40px 48px; position: relative; overflow: hidden; }
+.login-hero::after { content: ""; position: absolute; width: 420px; height: 420px; right: -160px; bottom: -160px; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%); opacity: .55; pointer-events: none; }
+.hero-body { display: flex; flex-direction: column; gap: 22px; max-width: 460px; position: relative; z-index: 1; }
+.login-hero .hero-title { font-size: clamp(30px, 3.2vw, 42px); line-height: 1.12; }
+.hero-card { background: rgba(255, 255, 255, .96); color: var(--ink); border-radius: 20px; padding: 18px; box-shadow: 0 24px 60px rgba(0, 0, 0, .25); display: flex; flex-direction: column; gap: 10px; max-width: 360px; transform: rotate(-1.5deg); }
+.hero-card-title { font-weight: 650; font-size: 14.5px; }
+.hero-moods { display: flex; justify-content: space-between; padding: 2px 0 6px; }
+.hero-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 12px; border-radius: 12px; background: var(--surface-2); color: var(--ink-2); }
+.hero-row span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-row b { color: var(--ink); }
+.hero-row.accent { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+/* desktop: brand lives in the hero */
+@media (min-width: 861px) { .login-col .login-brand { display: none; } }
+/* mobile: no hero, comfortable top spacing, safe areas */
+@media (max-width: 860px) {
+  .login-main { align-content: start; padding: calc(env(safe-area-inset-top, 0px) + 32px) 20px 32px; }
+}
+.stage > .login-desk { width: 100%; }

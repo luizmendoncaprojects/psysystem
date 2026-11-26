@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Icon, toast } from './ui';
+import { Icon, MoodFace, toast } from './ui';
 import { api } from './api';
 
 const maskCpf = (v) => v.replace(/\D/g, '').slice(0, 11).replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
@@ -86,37 +86,81 @@ function SignupForm({ onDone, onBack }) {
   );
 }
 
-// Login (and sign-up for patients). Patient: inside the phone frame. Psychologist: split screen.
-export default function Login({ role, onLogin }) {
-  const [mode, setMode] = useState('login');
+const HERO = {
+  paciente: {
+    title: 'Seu cuidado continua entre as sessões.',
+    points: [['smile', 'Registre humor, emoções e sono em segundos'], ['flag', 'Anote o que quer levar para a próxima sessão'], ['file', 'Receba documentos e notas fiscais da sua psicóloga']],
+    foot: 'Você decide o que compartilhar em cada registro.',
+  },
+  psicologa: {
+    title: 'Acompanhe cada paciente entre as sessões.',
+    points: [['checks', 'Registros do app com consentimento do paciente'], ['calendar', 'Agenda sincronizada com o Google'], ['shield', 'Documentos assinados e entregues no app']],
+    foot: 'CID, risco e adesão ficam visíveis só para você.',
+  },
+};
+
+// A small, real-looking preview of the product for the hero (decorative).
+function HeroPreview({ role }) {
   if (role === 'paciente') {
     return (
-      <div className="phone login-phone" aria-label="Entrar no app do paciente">
-        <main className="phone-scroll">
-          <div className="login-brand"><span className="brand-mark lg"><Icon name="logo" size={26} stroke={2.2} /></span><b>KiWave</b></div>
-          {mode === 'login'
-            ? <LoginForm role={role} onLogin={onLogin} onSignup={() => setMode('signup')} />
-            : <SignupForm onDone={(u) => { toast('Conta criada'); onLogin(u); }} onBack={() => setMode('login')} />}
-        </main>
+      <div className="hero-card" aria-hidden="true">
+        <p className="hero-card-title">Como você está agora?</p>
+        <div className="hero-moods">{[1, 2, 3, 4, 5].map((v) => <MoodFace key={v} v={v} size={34} />)}</div>
+        <div className="hero-row"><span><Icon name="moon" size={14} /> Sono</span><b>7h30</b></div>
+        <div className="hero-row"><span><Icon name="drop" size={14} /> Água</span><b>1,5 L de 2 L</b></div>
       </div>
     );
   }
   return (
-    <div className="login-desk">
-      <aside className="login-hero">
-        <div className="brand"><span className="brand-mark"><Icon name="logo" size={18} stroke={2.2} /></span> KiWave <span className="brand-sub">Consultório</span></div>
-        <div>
-          <h2 className="hero-title">Acompanhe cada paciente entre as sessões.</h2>
-          <ul className="login-points">
-            <li><Icon name="checks" size={16} /> Registros do app com consentimento do paciente</li>
-            <li><Icon name="calendar" size={16} /> Agenda sincronizada com o Google</li>
-            <li><Icon name="shield" size={16} /> Documentos assinados e entregues no app</li>
-          </ul>
-        </div>
-        <p className="xs on-dark-muted">CID, risco e adesão ficam visíveis só para você.</p>
-      </aside>
-      <main className="login-main"><LoginForm role={role} onLogin={onLogin} /></main>
+    <div className="hero-card" aria-hidden="true">
+      <p className="hero-card-title">Hoje</p>
+      {[['10:00', 'Sessão presencial'], ['14:00', 'Sessão online'], ['17:00', 'Primeira sessão']].map(([t, l]) => (
+        <div key={t} className="hero-row"><span><b>{t}</b> {l}</span><Icon name="chevR" size={14} /></div>
+      ))}
+      <div className="hero-row accent"><span><Icon name="sparkles" size={14} /> Resumo pré-sessão pronto</span></div>
     </div>
+  );
+}
+
+function AuthShell({ role, label, children }) {
+  const h = HERO[role];
+  return (
+    <div className={`login-desk ${role === 'paciente' ? 'is-patient' : ''}`} aria-label={label}>
+      <aside className="login-hero">
+        <div className="brand"><span className="brand-mark"><Icon name="logo" size={18} stroke={2.2} /></span> KiWave {role === 'psicologa' && <span className="brand-sub">Consultório</span>}</div>
+        <div className="hero-body">
+          <h2 className="hero-title">{h.title}</h2>
+          <ul className="login-points">{h.points.map(([i, t]) => <li key={t}><Icon name={i} size={16} /> {t}</li>)}</ul>
+          <HeroPreview role={role} />
+        </div>
+        <p className="xs on-dark-muted">{h.foot}</p>
+      </aside>
+      <main className="login-main">
+        <div className="login-col">
+          <div className="login-brand"><span className="brand-mark lg"><Icon name="logo" size={26} stroke={2.2} /></span><b>KiWave</b></div>
+          {children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Login (and sign-up for patients). Same split layout for both roles; the hero shows only on wide screens.
+export default function Login({ role, onLogin }) {
+  const [mode, setMode] = useState('login');
+  if (role === 'paciente') {
+    return (
+      <AuthShell role="paciente" label="Entrar no app do paciente">
+        {mode === 'login'
+          ? <LoginForm role={role} onLogin={onLogin} onSignup={() => setMode('signup')} />
+          : <SignupForm onDone={(u) => { toast('Conta criada'); onLogin(u); }} onBack={() => setMode('login')} />}
+      </AuthShell>
+    );
+  }
+  return (
+    <AuthShell role="psicologa" label="Entrar no painel da psicóloga">
+      <LoginForm role={role} onLogin={onLogin} />
+    </AuthShell>
   );
 }
 
@@ -142,9 +186,7 @@ export function LinkScreen({ user, onLinked, onLogout }) {
     } catch (err) { setError(err.message); setPreview(null); } finally { setBusy(false); }
   };
   return (
-    <div className="phone login-phone" aria-label="Vincular à psicóloga">
-      <main className="phone-scroll">
-        <div className="login-brand"><span className="brand-mark lg"><Icon name="logo" size={26} stroke={2.2} /></span><b>KiWave</b></div>
+    <AuthShell role="paciente" label="Vincular à psicóloga">
         <form className="login-form" onSubmit={check} noValidate>
           <div>
             <p className="eyebrow">Olá, {user.name.split(' ')[0]}</p>
@@ -168,7 +210,6 @@ export function LinkScreen({ user, onLinked, onLogout }) {
           )}
           <button type="button" className="link center" onClick={onLogout}>Sair</button>
         </form>
-      </main>
-    </div>
+    </AuthShell>
   );
 }
