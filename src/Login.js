@@ -202,7 +202,7 @@ export function LinkScreen({ user, onLinked, onLogout }) {
             <div className="link-preview">
               <p className="sm">Você vai se vincular a</p>
               <p className="row-title">{preview.psychologistName}</p>
-              <p className="xs muted">Cadastro dela: “{preview.patientName}”. Ela passa a ver os registros que você fizer no app.</p>
+              <p className="xs muted">Ela passa a ver os registros que você fizer no app.</p>
               <button type="button" className="btn-primary block mt12" disabled={busy} onClick={confirm}>{busy ? 'Vinculando…' : 'Confirmar vínculo'}</button>
             </div>
           ) : (

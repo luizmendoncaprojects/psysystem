@@ -76,25 +76,23 @@ test('psychologist uploads a PDF invoice and it shows up for the patient; non-PD
   fireEvent.change(screen.getByLabelText(/Nº da nota/), { target: { value: '000190' } });
   fireEvent.click(screen.getByRole('button', { name: /Enviar ao app do paciente/ }));
   toApp();
+  fireEvent.click(screen.getByRole('button', { name: /^Mais: documentos/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));
   expect(screen.getByText(/Nota 000190/)).toBeInTheDocument();
 });
 
 
-test('new patient: psychologist registers only the name and gets a link code', async () => {
+test('new patient: psychologist generates a link code without typing a name', async () => {
   global.fetch = fakeApi({
-    'POST /api/patients': [201, ({ name }) => ({ patient: { id: '7b1e2c3d-0000-4000-8000-000000000001', name, linked: false, code: 'K7M2QX', link: 'http://localhost:3000/?codigo=K7M2QX#paciente', codeExpiresAt: '2026-12-03T00:00:00Z' } })],
+    'POST /api/patients': [201, () => ({ patient: { id: '7b1e2c3d-0000-4000-8000-000000000001', name: 'Novo paciente', linked: false, code: 'K7M2QX', link: 'http://localhost:3000/?codigo=K7M2QX#paciente', codeExpiresAt: '2026-12-03T00:00:00Z' } })],
   });
   render(<App initialSessions={SESSIONS} />);
   toPanel();
   fireEvent.click(screen.getByRole('button', { name: /Novo paciente/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Gerar código de vínculo' }));
-  expect(screen.getByText('Informe o nome do paciente.')).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText(/Nome do paciente/), { target: { value: 'Marina Costa' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Gerar código de vínculo' }));
   expect(await screen.findByText('K7M2QX')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Abrir paciente' }));
-  expect(screen.getByRole('heading', { name: 'Marina Costa' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Novo paciente' })).toBeInTheDocument();
   expect(screen.getByText(/Aguardando o paciente criar a conta/)).toBeInTheDocument();
 });
 
@@ -109,6 +107,7 @@ test('document editor fills placeholders, signs and delivers to the patient app'
   fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Declaração de teste' } });
   fireEvent.click(screen.getByRole('button', { name: /Assinar e enviar ao app/ }));
   toApp();
+  fireEvent.click(screen.getByRole('button', { name: /^Mais: documentos/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));
   fireEvent.click(screen.getByRole('tab', { name: 'Declarações' }));
   expect(screen.getByText('Declaração de teste')).toBeInTheDocument();

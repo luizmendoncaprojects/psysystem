@@ -69,10 +69,11 @@ export function Icon({ name, size = 20, stroke = 1.8, className, label }) {
 
 export const MOODS = [
   { v: 1, label: 'Muito mal', curve: -4 },
-  { v: 2, label: 'Mal', curve: -2 },
-  { v: 3, label: 'Ok', curve: 0 },
-  { v: 4, label: 'Bem', curve: 2 },
-  { v: 5, label: 'Muito bem', curve: 4 },
+  { v: 2, label: 'Mal', curve: -2.5 },
+  { v: 3, label: 'Neutro', curve: 0 }, // gray, flat mouth
+  { v: 4, label: 'Ok', curve: 1 },
+  { v: 5, label: 'Bem', curve: 2.5 },
+  { v: 6, label: 'Muito bem', curve: 4 },
 ];
 
 export function MoodFace({ v, size = 40 }) {
@@ -137,7 +138,7 @@ export function Toggle({ on, onChange, label }) {
 }
 
 // Simple line chart in SVG. points: number[] (1–5 scale), marks: indexes with vertical lines.
-export function LineChart({ points, height = 140, marks = [], bands = [], labels = [], min = 1, max = 5, area = true }) {
+export function LineChart({ points, height = 140, marks = [], bands = [], labels = [], min = 1, max = 6, area = true }) {
   const w = 600, h = height, pad = 8;
   const x = (i) => pad + (i * (w - pad * 2)) / (points.length - 1);
   const y = (v) => pad + ((max - v) * (h - pad * 2)) / (max - min);
@@ -173,7 +174,7 @@ export function PageHead({ title, sub, actions }) {
 
 export function Spark({ d }) {
   if (!d) return <span className="muted sm">Sem registros</span>;
-  const w = 80, h = 26, x = (i) => (i * w) / (d.length - 1), y = (v) => h - 2 - ((v - 1) * (h - 4)) / 4;
+  const w = 80, h = 26, x = (i) => (i * w) / (d.length - 1), y = (v) => h - 2 - ((v - 1) * (h - 4)) / 5;
   return <svg width={w} height={h} className="spark" aria-hidden="true"><path d={d.map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join(' ')} /></svg>;
 }
 
@@ -232,6 +233,19 @@ export function downloadText(filename, text, type = 'text/plain') {
   a.href = url; a.download = filename; a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast(`Baixado: ${filename}`);
+}
+
+/* ---------- Auto refresh ---------- */
+// Calls fn every `ms` while the tab is visible, and right away when the tab comes back into view.
+export function useEvery(ms, fn) {
+  const ref = useRef(fn);
+  ref.current = fn;
+  useEffect(() => {
+    const run = () => { if (document.visibilityState !== 'hidden') ref.current(); };
+    const id = setInterval(run, ms);
+    document.addEventListener('visibilitychange', run);
+    return () => { clearInterval(id); document.removeEventListener('visibilitychange', run); };
+  }, [ms]);
 }
 
 /* ---------- Pagination ---------- */

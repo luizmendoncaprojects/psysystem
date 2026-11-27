@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import { sign, verifyToken, rateLimiter } from './lib/security.mjs';
 import { auth, db, isConfigured as supabaseReady } from './lib/supabase.mjs';
 import * as google from './lib/google.mjs';
-import { newCode, normalizeCode, isCode, validateSignup, CODE_DAYS } from './lib/linking.mjs';
+import { newCode, normalizeCode, isCode, validateSignup, CODE_HOURS } from './lib/linking.mjs';
 
 const PORT = Number(process.env.API_PORT || 4000);
 // On Vercel, APP_URL falls back to the production domain Vercel exposes.
@@ -62,7 +62,8 @@ function issue(res, status, s, extra = {}) {
 }
 
 const linkUrl = (code) => `${APP_URL}/app?codigo=${code}`;
-const codeExpiry = () => new Date(Date.now() + CODE_DAYS * 864e5).toISOString();
+const codeExpiry = () => new Date(Date.now() + CODE_HOURS * 36e5).toISOString();
+const PENDING_NAME = 'Novo paciente'; // placeholder until the patient links (patients.name is NOT NULL)
 const patientView = (p) => ({
   id: p.id, name: p.name, linked: Boolean(p.user_id), linkedAt: p.linked_at, createdAt: p.created_at,
   code: p.user_id ? null : p.link_code, codeExpiresAt: p.user_id ? null : p.code_expires_at,
@@ -131,12 +132,10 @@ const routes = {
     send(res, 200, { patients: rows.map(patientView) });
   },
 
-  // Psychologist registers only the name and gets a code + link to share.
+  // Psychologist only generates a code + link. The name comes from the patient's own sign-up when they link.
   'POST /api/patients': async (req, res) => {
     const s = requireRole(req, res, 'psicologa'); if (!s) return;
-    const name = String((await body(req)).name ?? '').trim().replace(/\s+/g, ' ');
-    if (name.length < 2 || name.length > 120) return fail(res, 400, 'Informe o nome do paciente.');
-    const row = await withFreshCode((code) => db.insert('patients', { psychologist_id: s.uid, name, link_code: code, code_expires_at: codeExpiry() }));
+    const row = await withFreshCode((code) => db.insert('patients', { psychologist_id: s.uid, name: PENDING_NAME, link_code: code, code_expires_at: codeExpiry() }));
     send(res, 201, { patient: patientView(row) });
   },
 
@@ -160,7 +159,7 @@ const routes = {
     const [p] = await db.list('patients', `link_code=eq.${code}&user_id=is.null&code_expires_at=gt.${now}&limit=1`);
     if (!p) return fail(res, 404, 'Código inválido ou vencido. Peça um novo à sua psicóloga.');
     const psi = await db.one('profiles', 'id', p.psychologist_id);
-    send(res, 200, { psychologistName: psi?.name ?? 'Sua psicóloga', patientName: p.name });
+    send(res, 200, { psychologistName: psi?.name ?? 'Sua psicóloga' });
   },
 
   // Patient redeems the code: one transaction in the database (public.link_patient).
@@ -175,6 +174,7 @@ const routes = {
       if (/invalid_code/.test(e.message)) return fail(res, 404, 'Código inválido ou vencido. Peça um novo à sua psicóloga.');
       throw e;
     }
+    await db.update('patients', `id=eq.${row.patient_id}`, { name: s.name }); // record takes the name the patient signed up with
     issue(res, 200, { ...s, patientId: row.patient_id, psychologistId: row.psychologist_id }, { psychologistName: row.psychologist_name });
   },
 

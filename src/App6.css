@@ -83,3 +83,58 @@
   .login-main { align-content: start; padding: calc(env(safe-area-inset-top, 0px) + 32px) 20px 32px; }
 }
 .stage > .login-desk { width: 100%; }
+
+/* ---------- Patient app: v8 mobile fixes ---------- */
+/* The app is the viewport: nothing behind it can scroll past the bottom bar. */
+.shell-paciente .phone { position: fixed; inset: 0; margin: 0 auto; height: auto; }
+.shell-paciente .phone-scroll { overscroll-behavior: contain; padding-bottom: 32px; }
+html:has(.shell-paciente), body:has(.shell-paciente) { overflow: hidden; overscroll-behavior: none; height: 100%; }
+
+/* Sleep: two time fields side by side, wake-ups stepper on its own row. Fields never overflow the card. */
+.sleep-times { grid-template-columns: 1fr 1fr; }
+.sleep-times > * { min-width: 0; }
+.sleep-times input { width: 100%; min-width: 0; -webkit-appearance: none; appearance: none; text-align: left; }
+.sleep-times .stepper { grid-column: 1 / -1; flex-direction: row; align-items: center; justify-content: space-between; }
+.sleep-times .stepper .row { min-width: 132px; }
+
+/* Bottom bar with the central FAB */
+.tabbar { position: relative; z-index: 30; align-items: end; }
+.fab-slot { display: grid; place-items: center; }
+.fab { width: 60px; height: 60px; border-radius: 50%; margin-top: -26px; display: grid; place-items: center; background: var(--accent); color: #fff; box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 40%, transparent), 0 0 0 5px var(--bg); transition: transform .22s var(--ease), background .2s; }
+.fab svg { transition: transform .22s var(--ease); }
+.fab.open svg { transform: rotate(45deg); }
+.fab:active { transform: scale(.94); }
+.fab.on:not(.open) { background: var(--accent-ink); }
+.fab-scrim { position: absolute; inset: 0; z-index: 20; border: 0; background: rgba(20, 17, 30, .42); animation: fade-in .18s var(--ease); }
+.fab-menu { position: absolute; z-index: 25; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 96px); transform: translateX(-50%); list-style: none; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.fab-menu li { animation: fab-pop .22s var(--ease) both; animation-delay: calc(var(--i) * 35ms); }
+.fab-menu button { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 6px 0 18px; border-radius: 999px; background: var(--surface); color: var(--ink); font-weight: 600; font-size: 15px; white-space: nowrap; box-shadow: var(--shadow-lg); }
+.fab-item-ico { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink); }
+@keyframes fab-pop { from { opacity: 0; transform: translateY(12px) scale(.96); } }
+@keyframes fade-in { from { opacity: 0; } }
+
+/* ---------- Selects: styled closed state + styled dropdown where the browser allows (customizable select) ---------- */
+.select, .rx-send select {
+  -webkit-appearance: none; appearance: none; padding-right: 36px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%237a7686' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; background-size: 16px;
+  transition: border-color .15s var(--ease), box-shadow .15s var(--ease);
+}
+.select:hover, .rx-send select:hover { border-color: var(--muted); }
+.select:focus-visible, .rx-send select:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+@supports (appearance: base-select) {
+  .select, .rx-send select { appearance: base-select; background-image: none; display: inline-flex; align-items: center; }
+  .select::picker-icon, .rx-send select::picker-icon { content: ""; width: 16px; height: 16px; margin-left: auto; background: currentColor; color: var(--muted); mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat; transition: rotate .18s var(--ease); }
+  .select:open::picker-icon, .rx-send select:open::picker-icon { rotate: 180deg; }
+  .select::picker(select), .rx-send select::picker(select) { appearance: base-select; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); padding: 6px; margin-top: 6px; box-shadow: var(--shadow-lg); max-height: 320px; }
+  .select option, .rx-send select option { color: var(--ink); font-weight: 500; padding: 9px 12px; border-radius: 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .select option:hover, .select option:focus-visible, .rx-send select option:hover { background: var(--surface-2); outline: none; }
+  .select option:checked, .rx-send select option:checked { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+  .select option::checkmark, .rx-send select option::checkmark { order: 1; margin-left: auto; content: "✓"; }
+}
+.mood-opt { font-size: 10.5px; line-height: 1.2; text-align: center; padding: 8px 0; }
+.tabbar .fab { color: #fff; }
+.tabbar .fab .tab-ico, .tabbar .fab svg { color: #fff; }
+.rx-send .file-btn.block { flex: 1; justify-content: center; }
+.cal-add { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.cal-add .chip { min-height: 32px; cursor: pointer; text-decoration: none; color: #fff; }

@@ -122,7 +122,7 @@
 .text-lg .phone-scroll { zoom: 1.12; }
 
 /* colorblind-safe mood scale (orange → gray → blue) */
-.cb { --mood-1: #e0874a; --mood-2: #f3c79b; --mood-3: #d6d3cc; --mood-4: #a9cbe9; --mood-5: #5a96d2; }
+.cb { --mood-1: #e0874a; --mood-2: #f3c79b; --mood-3: #c9c9c9; --mood-4: #f1e2b8; --mood-5: #a9cbe9; --mood-6: #5a96d2; }
 
 /* dark theme, scoped to the phone or the desk */
 .theme-dark {

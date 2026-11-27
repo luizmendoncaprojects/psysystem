@@ -29,7 +29,7 @@ export const api = {
   link: (code) => req('/link', { method: 'POST', body: { code } }),
   patients: {
     list: () => req('/patients'),
-    create: (name) => req('/patients', { method: 'POST', body: { name } }),
+    create: () => req('/patients', { method: 'POST', body: {} }),
     newCode: (id) => req('/patients/code', { method: 'POST', body: { id } }),
   },
   google: {

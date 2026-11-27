@@ -24,7 +24,7 @@ export function LinkCard({ patient, onNewCode, compact }) {
   const l = patient.link;
   if (!l) return null;
   if (l.linked) return <p className="chip chip-ok"><Icon name="check" size={12} stroke={2.4} /> App vinculado</p>;
-  const msg = `Olá, ${patient.name.split(' ')[0]}! Baixe o app KiWave, crie sua conta e use o código ${l.code} para se vincular a mim: ${l.url}`;
+  const msg = `Olá! Baixe o app KiWave, crie sua conta e use o código ${l.code} para se vincular a mim: ${l.url}`;
   return (
     <div className={`link-card ${compact ? 'compact' : ''}`}>
       <div className="row-between wrap gap12">
@@ -45,17 +45,14 @@ export function LinkCard({ patient, onNewCode, compact }) {
 
 export function NewPatientModal({ store, onClose, onCreated }) {
   const { setPatients, panelPrefs } = store;
-  const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState(null);
   const save = async (e) => {
     e.preventDefault();
-    const n = name.trim().replace(/\s+/g, ' ');
-    if (n.length < 2) { setError('Informe o nome do paciente.'); return; }
     setBusy(true); setError('');
     try {
-      const { patient } = await api.patients.create(n);
+      const { patient } = await api.patients.create();
       const local = fromServer(patient, panelPrefs.defaultPerms);
       setPatients((ps) => [local, ...ps]);
       setCreated(local);
@@ -63,20 +60,18 @@ export function NewPatientModal({ store, onClose, onCreated }) {
   };
   if (created) {
     return (
-      <Modal title={`${created.name} cadastrado`} sub="Envie o código ou o link. O vínculo acontece quando o paciente digitar o código no app." onClose={onClose}
+      <Modal title="Código gerado" sub="Envie o código ou o link. O vínculo acontece quando o paciente digitar o código no app." onClose={onClose}
         footer={<><button className="btn-secondary" onClick={onClose}>Fechar</button><button className="btn-primary" onClick={() => { onCreated?.(created.id); onClose(); }}>Abrir paciente</button></>}>
         <LinkCard patient={created} />
       </Modal>
     );
   }
   return (
-    <Modal title="Novo paciente" sub="Só o nome. O paciente completa os próprios dados ao criar a conta no app." onClose={onClose}
+    <Modal title="Novo paciente" sub="O paciente preenche nome e dados ao criar a conta no app." onClose={onClose}
       footer={<><button className="btn-secondary" onClick={onClose}>Cancelar</button><button className="btn-primary" form="np-form" disabled={busy}>{busy ? 'Gerando código…' : 'Gerar código de vínculo'}</button></>}>
       <form id="np-form" className="stack-12" onSubmit={save} noValidate>
-        <label className="field">Nome do paciente
-          <input value={name} onChange={(e) => setName(e.target.value)} autoComplete="off" aria-invalid={!!error} />
-          {error && <span className="field-err" role="alert">{error}</span>}
-        </label>
+        <p className="sm">Gere o código e envie ao paciente. O código vale 24 horas.</p>
+        {error && <span className="field-err" role="alert">{error}</span>}
         <p className="xs muted">Recursos do app que já vêm ligados: {FEATURES.filter(([k]) => panelPrefs.defaultPerms[k]).map(([, l]) => l).join(', ')}.</p>
       </form>
     </Modal>

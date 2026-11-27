@@ -2,7 +2,7 @@
 
 // [key, label, description, icon]
 export const FEATURES = [
-  ['humor', 'Humor', 'Registro rápido de 1 a 5, quantas vezes quiser', 'smile'],
+  ['humor', 'Humor', 'Registro rápido de 1 a 6, quantas vezes quiser', 'smile'],
   ['emocoes', 'Emoções', 'Escolher o que está sentindo e o que influenciou', 'heart'],
   ['habitos', 'Hábitos', 'Rotina combinada na sessão', 'checks'],
   ['sono', 'Sono', 'Horário de deitar e acordar, despertares e qualidade', 'moon'],

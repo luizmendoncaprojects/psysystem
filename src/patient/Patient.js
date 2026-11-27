@@ -1,17 +1,24 @@
 import { useRef, useState } from 'react';
-import { Icon, MoodPicker, MoodFace, Avatar, Segmented, Toggle, MOODS, Modal, toast, downloadText } from '../ui';
+import { Icon, MoodPicker, MoodFace, Avatar, Segmented, Toggle, MOODS, Modal, toast, downloadText, useEvery } from '../ui';
 import { DocPaper } from '../panel/Docs';
 import { EMOTIONS, fmtL, habitSub, brl, ME } from '../data';
 import Settings from './Settings';
 
-// [key, label, icon, visible(perms)]
+// [key, label, icon, visible(perms)]. The bottom bar puts the FAB in the middle of these four.
 const TABS = [
   ['hoje', 'Hoje', 'home', () => true],
   ['humor', 'Humor', 'smile', (p) => p.humor || p.emocoes],
   ['rotina', 'Rotina', 'checks', (p) => p.habitos || p.agua || p.remedios || p.receitas],
   ['diario', 'Diário', 'book', (p) => p.diario || p.pauta],
-  ['docs', 'Documentos', 'file', () => true],
 ];
+// FAB menu: [label, icon, tab, sub, visible(perms)]
+const FAB_ITEMS = [
+  ['Documentos', 'file', 'docs', null, () => true],
+  ['Remédios', 'pill', 'rotina', 'remedios', (p) => p.remedios || p.receitas],
+  ['Assuntos da sessão', 'flag', 'diario', 'pauta', (p) => p.pauta],
+  ['Configurações', 'gear', 'config', null, () => true],
+];
+const EXTRA = ['docs', 'config']; // screens reached from the FAB, not from a tab
 
 export default function Patient({ store }) {
   const { perms, patientPrefs: prefs, setPatientPrefs } = store;
@@ -20,24 +27,38 @@ export default function Patient({ store }) {
   const [mood, setMood] = useState(null);
   const [taken, setTaken] = useState({ 1: '08:12' }); // medId → time taken
   const [diarioSub, setDiarioSub] = useState('diario');
+  const [rotinaSub, setRotinaSub] = useState('habitos');
+  const [fab, setFab] = useState(false);
+  const [dayEmotion, setDayEmotion] = useState(null);
+  const [, setTick] = useState(0);
+  useEvery(60_000, () => setTick((t) => t + 1)); // re-render each minute: dates and times stay current
   const touch = useRef(null);
   const tabs = TABS.filter((t) => t[3](perms));
-  const cur = tab === 'config' || tabs.some((t) => t[0] === tab) ? tab : 'hoje'; // tab may be turned off by the psychologist; config opens from the avatar
+  const cur = EXTRA.includes(tab) || tabs.some((t) => t[0] === tab) ? tab : 'hoje'; // tab may be turned off by the psychologist
   const idx = tabs.findIndex((t) => t[0] === cur);
   const go = (t, sub) => {
-    setDir(Math.sign(tabs.findIndex((x) => x[0] === t) - idx));
+    setDir(idx < 0 ? 0 : Math.sign(tabs.findIndex((x) => x[0] === t) - idx));
     setTab(t);
-    if (sub) setDiarioSub(sub);
+    setFab(false);
+    if (sub && t === 'diario') setDiarioSub(sub);
+    if (sub && t === 'rotina') setRotinaSub(sub);
     document.querySelector('.phone-scroll')?.scrollTo(0, 0);
   };
-  const ctx = { ...store, mood, setMood, taken, setTaken, go };
+  const ctx = { ...store, mood, setMood, taken, setTaken, go, dayEmotion, setDayEmotion };
+  const half = Math.ceil(tabs.length / 2);
+  const tabBtn = ([k, l, i]) => (
+    <button key={k} className={cur === k ? 'on' : ''} aria-current={cur === k ? 'page' : undefined} onClick={() => go(k)}>
+      <span className="tab-ico"><Icon name={i} size={22} /></span>
+      <span>{l}</span>
+    </button>
+  );
 
   // Swipe left/right on the content to move between bottom tabs. Ignored on form controls and horizontal scrollers.
   const onTouchStart = (e) => {
     touch.current = !prefs.swipe || e.target.closest('input, select, textarea, .no-swipe') ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY };
   };
   const onTouchEnd = (e) => {
-    if (!touch.current || cur === 'config') return;
+    if (!touch.current || idx < 0) return;
     const dx = e.changedTouches[0].clientX - touch.current.x;
     const dy = e.changedTouches[0].clientY - touch.current.y;
     touch.current = null;
@@ -55,19 +76,30 @@ export default function Patient({ store }) {
         <div key={cur} className={`tab-pane in-${dir < 0 ? 'left' : dir > 0 ? 'right' : 'none'}`}>
           {cur === 'hoje' && <Hoje {...ctx} />}
           {cur === 'humor' && <Humor {...ctx} />}
-          {cur === 'rotina' && <Rotina {...ctx} />}
+          {cur === 'rotina' && <Rotina {...ctx} sub={rotinaSub} setSub={setRotinaSub} />}
           {cur === 'diario' && <DiarioTab demo={store.demo} perms={perms} sub={diarioSub} setSub={setDiarioSub} />}
           {cur === 'docs' && <Documentos store={store} />}
           {cur === 'config' && <Settings prefs={prefs} setPrefs={setPatientPrefs} onBack={() => go('hoje')} onLogout={() => store.logout('paciente')} />}
         </div>
       </main>
-      <nav className="tabbar" style={{ gridTemplateColumns: `repeat(${tabs.length}, 1fr)` }} aria-label="Navegação principal">
-        {tabs.map(([k, l, i]) => (
-          <button key={k} className={cur === k ? 'on' : ''} aria-current={cur === k ? 'page' : undefined} onClick={() => go(k)}>
-            <span className="tab-ico"><Icon name={i} size={22} /></span>
-            <span>{l}</span>
+      {fab && <button className="fab-scrim" aria-label="Fechar menu" onClick={() => setFab(false)} />}
+      {fab && (
+        <ul className="fab-menu" aria-label="Mais opções">
+          {FAB_ITEMS.filter((f) => f[4](perms)).map(([l, i, t, sub], n) => (
+            <li key={l} style={{ '--i': n }}>
+              <button onClick={() => go(t, sub)}><span>{l}</span><span className="fab-item-ico"><Icon name={i} size={20} /></span></button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <nav className="tabbar" style={{ gridTemplateColumns: `repeat(${half}, 1fr) 72px repeat(${tabs.length - half}, 1fr)` }} aria-label="Navegação principal">
+        {tabs.slice(0, half).map(tabBtn)}
+        <div className="fab-slot">
+          <button className={`fab ${fab ? 'open' : ''} ${EXTRA.includes(cur) ? 'on' : ''}`} aria-label={fab ? 'Fechar menu' : 'Mais: documentos, remédios e configurações'} aria-expanded={fab} onClick={() => setFab(!fab)}>
+            <Icon name="plus" size={26} stroke={2.2} />
           </button>
-        ))}
+        </div>
+        {tabs.slice(half).map(tabBtn)}
       </nav>
     </div>
   );
@@ -88,16 +120,30 @@ function Header({ eyebrow, title, sub, right }) {
 
 /* ---------- HOJE ---------- */
 const MOODS_LABEL = MOODS.map((m) => m.label);
-const TODAY = new Date();
+// shortcut: demo session; swap for the real next session once the agenda lives in Supabase.
+const NEXT_SESSION = { title: 'Sessão com Débora Mendonça', start: new Date('2026-11-19T18:00:00-03:00'), min: 50, where: 'Online · KiWave' };
+const calStamp = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); // 20261119T210000Z
+const sessionEnd = (s) => new Date(s.start.getTime() + s.min * 60000);
+// .ics opens in Apple Calendar (and Outlook); Google gets a prefilled "new event" link. No account access needed.
+const icsFor = (s) => ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//KiWave//PT-BR', 'BEGIN:VEVENT', `UID:${calStamp(s.start)}@kiwave`, `DTSTAMP:${calStamp(new Date())}`,
+  `DTSTART:${calStamp(s.start)}`, `DTEND:${calStamp(sessionEnd(s))}`, `SUMMARY:${s.title}`, `LOCATION:${s.where}`,
+  'BEGIN:VALARM', 'TRIGGER:-PT15M', 'ACTION:DISPLAY', `DESCRIPTION:${s.title}`, 'END:VALARM', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+const googleCalUrl = (s) => `https://calendar.google.com/calendar/render?${new URLSearchParams({ action: 'TEMPLATE', text: s.title, dates: `${calStamp(s.start)}/${calStamp(sessionEnd(s))}`, location: s.where })}`;
+const DAY_EMOTIONS = ['Tristeza', 'Irritabilidade', 'Medo', 'Ansiedade', 'Vergonha'];
 const dayLabel = (off) => {
-  const d = new Date(TODAY);
+  const d = new Date();
   d.setDate(d.getDate() + off);
   const s = d.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace('-feira', '');
   return s[0].toUpperCase() + s.slice(1);
 };
 const PAST_WATER = [1500, 2000, 1250, 1750, 1000, 2000]; // index = -off - 1
 
-function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits }) {
+function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits, dayEmotion, setDayEmotion, setEmotions }) {
+  // One emotion per day; switching moves the count from the old one to the new one.
+  const pickEmotion = (f) => {
+    setEmotions((e) => ({ ...e, ...(dayEmotion && { [dayEmotion]: Math.max(0, (e[dayEmotion] || 0) - 1) }), [f]: (e[f] || 0) + 1 }));
+    setDayEmotion(f);
+  };
   const [off, setOff] = useState(0); // 0 = hoje, -1 = ontem… past days are read-only except sleep
   const past = off < 0;
   const day = 6 + off; // index into habit.week
@@ -133,6 +179,35 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
 
       {past && <p className="readonly-note"><Icon name="lock" size={14} /> Dias anteriores são só para consulta. Você pode ajustar apenas o sono.</p>}
 
+      {/* shortcut: only demo has a scheduled session; real sessions come once the agenda is stored in Supabase */}
+      {!past && !demo && (
+        <section className="card row gap12">
+          <span className="ico-tile tile-doc"><Icon name="calendar" size={18} /></span>
+          <div><p className="row-title">Nenhuma sessão agendada</p><p className="muted sm">Quando sua psicóloga marcar, ela aparece aqui.</p></div>
+        </section>
+      )}
+      {!past && demo && <section className="card session-card">
+        <div className="row-between">
+          <span className="eyebrow on-dark">Próxima sessão</span>
+          <span className="chip chip-glass"><Icon name="video" size={14} /> Online</span>
+        </div>
+        <p className="session-when">Quinta, 19/11 · 18:00</p>
+        <p className="on-dark-muted">com Débora Mendonça · 50 min · link libera 10 min antes</p>
+        <div className="cal-add">
+          <span className="on-dark-muted xs">Adicionar ao calendário</span>
+          <div className="row gap8">
+            <button className="chip chip-glass" onClick={() => downloadText('sessao-kiwave.ics', icsFor(NEXT_SESSION), 'text/calendar')}><Icon name="calendar" size={14} /> Apple</button>
+            <a className="chip chip-glass" href={googleCalUrl(NEXT_SESSION)} target="_blank" rel="noreferrer"><Icon name="calendar" size={14} /> Google</a>
+          </div>
+        </div>
+        {perms.pauta && (
+          <button className="session-agenda" onClick={() => go('diario', 'pauta')}>
+            <span><strong>Assuntos</strong> para a próxima sessão</span>
+            <span className="row gap4">Ver <Icon name="chevR" size={16} /></span>
+          </button>
+        )}
+      </section>}
+
       {perms.humor && (past ? (!dayMood ? <p className="hint">Sem registro de humor neste dia.</p> : 
         <section className="card row gap12">
           <MoodFace v={dayMood} size={40} />
@@ -150,21 +225,6 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
       ))}
 
       {perms.sono && <Sleep key={off} off={off} value={sleep[off]} onSave={(v) => setSleep({ ...sleep, [off]: v })} />}
-
-      {!past && <section className="card session-card">
-        <div className="row-between">
-          <span className="eyebrow on-dark">Próxima sessão</span>
-          <span className="chip chip-glass"><Icon name="video" size={14} /> Online</span>
-        </div>
-        <p className="session-when">Quinta, 19/11 · 18:00</p>
-        <p className="on-dark-muted">com Débora Mendonça · 50 min · link libera 10 min antes</p>
-        {perms.pauta && (
-          <button className="session-agenda" onClick={() => go('diario', 'pauta')}>
-            <span><strong>Assuntos</strong> para a próxima sessão</span>
-            <span className="row gap4">Ver <Icon name="chevR" size={16} /></span>
-          </button>
-        )}
-      </section>}
 
       {perms.agua && <Water water={dayWater} setWater={setWater} readOnly={past} goal={waterGoal} />}
 
@@ -192,6 +252,21 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {perms.emocoes && !past && (
+        <section className="card">
+          <h2 className="h3">Qual a emoção do dia?</h2>
+          <p className="muted sm">Escolha a que mais marcou o seu dia.</p>
+          <div className="chips mt12" role="radiogroup" aria-label="Emoção do dia">
+            {DAY_EMOTIONS.map((f) => (
+              <button key={f} role="radio" aria-checked={dayEmotion === f} className={`chip-sel neg ${dayEmotion === f ? 'on' : ''}`} onClick={() => pickEmotion(f)}>
+                {dayEmotion === f && <Icon name="check" size={14} stroke={2.4} />}{f}
+              </button>
+            ))}
+          </div>
+          {dayEmotion && <p className="saved-note"><Icon name="check" size={16} /> Registrado</p>}
         </section>
       )}
     </>
@@ -340,7 +415,7 @@ function Humor({ demo, perms, mood, setMood, setEmotions }) {
             {WEEK.map(([d, v]) => (
               <div key={d} className="bar-col">
                 <MoodFace v={v} size={22} />
-                <div className="bar-track"><span className={`bar-fill m${v}`} style={{ height: `${v * 20}%` }} /></div>
+                <div className="bar-track"><span className={`bar-fill m${v}`} style={{ height: `${(v / 6) * 100}%` }} /></div>
                 <span className={`sm ${d === 'Hoje' ? 'ink strong' : 'muted'}`}>{d}</span>
               </div>
             ))}
@@ -355,12 +430,11 @@ function Humor({ demo, perms, mood, setMood, setEmotions }) {
 const DAYS = ['T', 'Q', 'Q', 'S', 'S', 'D', 'Hoje'];
 
 function Rotina(props) {
-  const { perms } = props;
+  const { perms, sub, setSub } = props;
   const opts = [
     ...(perms.habitos || perms.agua ? [['habitos', 'Hábitos']] : []),
     ...(perms.remedios || perms.receitas ? [['remedios', 'Remédios']] : []),
   ];
-  const [sub, setSub] = useState(opts[0][0]);
   const cur = opts.some((o) => o[0] === sub) ? sub : opts[0][0];
   return (
     <>
@@ -443,14 +517,14 @@ function Remedios({ perms, meds, taken, setTaken, rx, setRx }) {
   );
 }
 
-function Receitas({ meds, rx, setRx }) {
-  const [med, setMed] = useState(meds[0]?.name ?? 'Outro');
+// Patient only sends the file; the psychologist fills in the medicines and accepts it in the panel.
+function Receitas({ rx, setRx }) {
   const send = (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     e.target.value = '';
     if (!/^image\/|application\/pdf/.test(f.type)) { toast('Envie uma foto ou um PDF da receita', 'warn'); return; }
-    setRx([{ id: Date.now(), med, date: 'Hoje', file: f.name, url: URL.createObjectURL(f), status: 'Nova' }, ...rx]);
+    setRx([{ id: Date.now(), med: '', date: 'Hoje', file: f.name, url: URL.createObjectURL(f), status: 'Nova' }, ...rx]);
     toast('Receita enviada à sua psicóloga');
   };
   return (
@@ -459,16 +533,11 @@ function Receitas({ meds, rx, setRx }) {
         <span className="ico-tile tile-doc"><Icon name="file" size={18} /></span>
         <div className="grow">
           <h2 className="h3">Receitas</h2>
-          <p className="muted sm">Envie a foto ou o PDF. Sua psicóloga guarda e cadastra os horários.</p>
+          <p className="muted sm">Envie a foto ou o PDF. Sua psicóloga cadastra os remédios e os horários.</p>
         </div>
       </div>
       <div className="rx-send">
-        <label className="sr-only" htmlFor="rx-med">Remédio da receita</label>
-        <select id="rx-med" value={med} onChange={(e) => setMed(e.target.value)}>
-          {meds.map((m) => <option key={m.id}>{m.name}</option>)}
-          <option>Remédio novo</option>
-        </select>
-        <label className="btn-primary file-btn">
+        <label className="btn-primary file-btn block">
           <Icon name="upload" size={16} /> Enviar receita
           <input type="file" accept="image/*,application/pdf" onChange={send} />
         </label>
@@ -477,10 +546,10 @@ function Receitas({ meds, rx, setRx }) {
         {rx.map((r) => (
           <li key={r.id} className="list-row">
             <div className="grow">
-              <p className="row-title">{r.med}</p>
-              <p className="muted sm">{r.file} · enviada {r.date === 'Hoje' ? 'hoje' : `em ${r.date}`}</p>
+              <p className="row-title">{r.med || r.file}</p>
+              <p className="muted sm">{r.med && `${r.file} · `}enviada {r.date === 'Hoje' ? 'hoje' : `em ${r.date}`}</p>
             </div>
-            <span className={`chip ${r.status === 'Nova' ? 'chip-quiet' : 'chip-ok'}`}>{r.status === 'Nova' ? 'Enviada' : 'Recebida'}</span>
+            <span className={`chip ${r.status === 'Nova' ? 'chip-quiet' : 'chip-ok'}`}>{r.status === 'Nova' ? 'Enviada' : 'Aceita'}</span>
           </li>
         ))}
       </ul>

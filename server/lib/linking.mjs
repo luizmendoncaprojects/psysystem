@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 
 // 32 symbols without look-alikes (no 0/O, 1/I). 32 divides 256, so `byte % 32` has no bias.
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-export const CODE_DAYS = 7;
+export const CODE_HOURS = 24; // short-lived: a leaked code stops working the next day
 export const newCode = () => Array.from(crypto.randomBytes(6), (b) => ALPHABET[b % 32]).join('');
 export const normalizeCode = (c) => String(c ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export const isCode = (c) => /^[A-HJ-NP-Z2-9]{6}$/.test(c);

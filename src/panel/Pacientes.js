@@ -146,7 +146,7 @@ export function PatientProfile({ p, store, a }) {
 /* ---------- OVERVIEW ---------- */
 const MOOD30 = [4, 4, 3, 4, 3, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 3, 3, 2, 3, 2, 2, 3, 3];
 const SERIES = {
-  humor: { points: MOOD30, min: 1, max: 5, label: 'Humor médio do dia (1 a 5)' },
+  humor: { points: MOOD30, min: 1, max: 6, label: 'Humor médio do dia (1 a 6)' },
   habitos: { points: [2, 3, 3, 2, 3, 3, 2, 3, 3, 3, 2, 3, 2, 3, 3, 2, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2, 1, 2, 2, 1], min: 0, max: 3, label: 'Hábitos cumpridos no dia (de 3)' },
   remedios: { points: [3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3], min: 0, max: 3, label: 'Doses registradas no dia (de 3)' },
 };
@@ -155,7 +155,7 @@ function OverviewBasic({ p }) {
   return (
     <div className="grid-2-1">
       <section className="panel">
-        <div className="panel-head"><div><h2 className="h3">Humor no app · 14 dias</h2><p className="muted sm">Escala de 1 a 5 registrada pelo paciente</p></div></div>
+        <div className="panel-head"><div><h2 className="h3">Humor no app · 14 dias</h2><p className="muted sm">Escala de 1 a 6 registrada pelo paciente</p></div></div>
         {p.mood ? <LineChart points={p.mood} height={160} /> : <p className="muted pad center">Ainda não há registros no app.</p>}
       </section>
       <section className="panel">
@@ -380,11 +380,12 @@ function RemediosReceitas({ p, up }) {
   const save = (e) => {
     e.preventDefault();
     if (!draft.name.trim()) return;
-    up({ meds: [...p.meds, { ...draft, name: draft.name.trim(), id: Date.now() }] });
-    toast(`${draft.name.trim()} cadastrado · lembrete às ${draft.time} no app`);
+    const { rxId, ...med } = draft; // rxId: saving this medicine also accepts that prescription
+    const name = med.name.trim();
+    up({ meds: [...p.meds, { ...med, name, id: Date.now() }], ...(rxId && { rx: p.rx.map((r) => (r.id === rxId ? { ...r, status: 'Aceita', med: name } : r)) }) });
+    toast(`${name} cadastrado · lembrete às ${draft.time} no app${rxId ? ' · receita aceita' : ''}`);
     setDraft(null);
   };
-  const setRx = (id, patch) => up({ rx: p.rx.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
   return (
     <div className="grid-2-1">
       <section className="panel">
@@ -393,8 +394,8 @@ function RemediosReceitas({ p, up }) {
           {!draft && <button className="btn-primary sm-btn" onClick={() => setDraft(blank)}><Icon name="plus" size={14} /> Cadastrar remédio</button>}
         </div>
         {draft && (
-          <Modal title="Cadastrar remédio" sub="O horário vira lembrete no app do paciente." onClose={() => setDraft(null)}
-            footer={<><button className="btn-secondary" onClick={() => setDraft(null)}>Cancelar</button><button className="btn-primary" form="med-form">Salvar remédio</button></>}>
+          <Modal title={draft.rxId ? 'Aceitar receita' : 'Cadastrar remédio'} sub={draft.rxId ? 'Preencha o remédio da receita. O horário vira lembrete no app do paciente.' : 'O horário vira lembrete no app do paciente.'} onClose={() => setDraft(null)}
+            footer={<><button className="btn-secondary" onClick={() => setDraft(null)}>Cancelar</button><button className="btn-primary" form="med-form">{draft.rxId ? 'Salvar e aceitar receita' : 'Salvar remédio'}</button></>}>
           <form id="med-form" className="stack-12" onSubmit={save}>
             <label className="field grow">Remédio e dose<input autoFocus value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Ex.: Escitalopram 10 mg" required /></label>
             <label className="field">Horário (lembrete)<input type="time" value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} /></label>
@@ -434,29 +435,29 @@ function RemediosReceitas({ p, up }) {
             <li key={r.id} className={r.status === 'Nova' ? 'new' : ''}>
               <span className="ico-tile tile-doc"><Icon name="file" size={18} /></span>
               <div className="grow">
-                <p className="row-title">{r.med}</p>
+                <p className="row-title">{r.med || 'Receita enviada'}</p>
                 <p className="xs muted">{r.file} · {r.date}</p>
               </div>
-              <Chip kind={r.status === 'Nova' ? 'accent' : 'quiet'}>{r.status === 'Nova' ? 'Nova' : 'Guardada'}</Chip>
+              <Chip kind={r.status === 'Nova' ? 'accent' : 'quiet'}>{r.status === 'Nova' ? 'Nova' : 'Aceita'}</Chip>
               {r.url
                 ? <a className="btn-ghost-sm" href={r.url} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> Ver</a>
                 : <button className="btn-ghost-sm" onClick={() => setShowRx(r)}><Icon name="eye" size={14} /> Ver</button>}
-              {r.status === 'Nova' && <button className="btn-secondary sm-btn" onClick={() => { setRx(r.id, { status: 'Arquivada' }); toast('Receita guardada no prontuário'); }}><Icon name="archive" size={14} /> Guardar</button>}
+              {r.status === 'Nova' && <button className="btn-primary sm-btn" onClick={() => setDraft({ ...blank, rxId: r.id })}><Icon name="check" size={14} /> Aceitar</button>}
             </li>
           ))}
           {p.rx.length === 0 && <li className="muted sm">Nenhuma receita enviada.</li>}
         </ul>
       </section>
       {showRx && (
-        <Modal title={`Receita · ${showRx.med}`} sub={`${showRx.file} · enviada em ${showRx.date}`} onClose={() => setShowRx(null)}
-          footer={<button className="btn-primary" onClick={() => downloadText(showRx.file.replace(/.w+$/, '.txt'), `Receita de ${showRx.med}
+        <Modal title={`Receita · ${showRx.med || showRx.file}`} sub={`${showRx.file} · enviada em ${showRx.date}`} onClose={() => setShowRx(null)}
+          footer={<button className="btn-primary" onClick={() => downloadText(showRx.file.replace(/.w+$/, '.txt'), `Receita ${showRx.file}
 Paciente: ${p.name}
 Enviada em ${showRx.date}`)}><Icon name="download" size={16} /> Baixar</button>}>
           <div className="rx-mock">
             <p className="xs muted">Arquivo de exemplo</p>
             <p className="row-title">Receituário de controle especial</p>
             <p className="sm">Paciente: {p.name}</p>
-            <p className="sm">Uso oral: {showRx.med} · 1 comprimido ao dia, contínuo</p>
+            <p className="sm">Uso oral: {showRx.med || "—"} · 1 comprimido ao dia, contínuo</p>
             <p className="xs muted mt12">Dr. Ricardo Alves · psiquiatra · CRM-GO 00000</p>
           </div>
         </Modal>

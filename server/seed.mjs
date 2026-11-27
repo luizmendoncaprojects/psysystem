@@ -2,7 +2,7 @@
 // The patient (Luiz) creates his own account in the app and enters the printed code.
 // Run: npm run seed   — reads e-mail and password from .env; the password is never printed.
 import { auth, db, isConfigured } from './lib/supabase.mjs';
-import { newCode, CODE_DAYS } from './lib/linking.mjs';
+import { newCode, CODE_HOURS } from './lib/linking.mjs';
 
 if (!isConfigured()) { console.error('Preencha SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY e SUPABASE_SERVICE_ROLE_KEY no .env.'); process.exit(1); }
 
@@ -19,9 +19,9 @@ console.log(`- psicóloga: ${email} ${existing ? 'atualizada' : 'criada'}`);
 const patientName = 'Luiz Mendonça';
 const [pending] = await db.list('patients', `psychologist_id=eq.${psi.id}&name=eq.${encodeURIComponent(patientName)}&limit=1`);
 const code = newCode();
-const expires = new Date(Date.now() + CODE_DAYS * 864e5).toISOString();
+const expires = new Date(Date.now() + CODE_HOURS * 36e5).toISOString();
 if (!pending) await db.insert('patients', { psychologist_id: psi.id, name: patientName, link_code: code, code_expires_at: expires });
 else if (!pending.user_id) await db.update('patients', `id=eq.${pending.id}`, { link_code: code, code_expires_at: expires });
 
 if (pending?.user_id) console.log(`- paciente: ${patientName} já vinculado.`);
-else console.log(`- paciente: ${patientName} aguardando vínculo · código ${code} (vale ${CODE_DAYS} dias) · ${process.env.APP_URL || 'http://localhost:3000'}/app?codigo=${code}`);
+else console.log(`- paciente: ${patientName} aguardando vínculo · código ${code} (vale ${CODE_HOURS} horas) · ${process.env.APP_URL || 'http://localhost:3000'}/app?codigo=${code}`);

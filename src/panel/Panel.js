@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Icon, Avatar, Segmented, Toggle, LineChart, Chip, PageHead, Modal, toast, downloadText, usePaged, Pager } from '../ui';
+import { Icon, Avatar, Segmented, Toggle, LineChart, Chip, PageHead, Modal, toast, downloadText, usePaged, Pager, useEvery } from '../ui';
 import { PatientTable, PatientList, PatientProfile } from './Pacientes';
 import { brl, REPORT_KINDS, TODAY_STR } from '../data';
 import PanelSettings from './Settings';
@@ -23,13 +23,15 @@ export default function Panel({ store }) {
   // Real patients (created through the API) join the demo list; their link status comes from the server.
   const { setPatients } = store;
   const defaultPerms = prefs.defaultPerms;
-  useEffect(() => {
+  const loadPatients = useCallback(() => {
     api.patients.list().then(({ patients: rows }) => setPatients((ps) => {
       const byId = new Map(rows.map((r) => [r.id, fromServer(r, defaultPerms)]));
-      const kept = ps.map((p) => (byId.has(p.id) ? { ...p, status: byId.get(p.id).status, link: byId.get(p.id).link } : p));
+      const kept = ps.map((p) => (byId.has(p.id) ? { ...p, name: byId.get(p.id).name, status: byId.get(p.id).status, link: byId.get(p.id).link } : p));
       return [...[...byId.values()].filter((r) => !ps.some((p) => p.id === r.id)), ...kept];
     }), () => {}); // offline or demo: keep the local list
   }, [setPatients, defaultPerms]);
+  useEffect(loadPatients, [loadPatients]);
+  useEvery(60_000, loadPatients); // picks up patients who linked meanwhile
   const closeModal = () => setModal(null);
   const actions = {
     go, open,
@@ -130,7 +132,7 @@ function Notifications({ store, open, go }) {
   const [show, setShow] = useState(false);
   const [read, setRead] = useState([]);
   const items = [
-    ...store.patients.flatMap((p) => p.rx.filter((r) => r.status === 'Nova').map((r) => ({ id: `rx${r.id}`, icon: 'file', text: `${p.name} enviou receita de ${r.med}`, when: r.date, act: () => open(p.id) }))),
+    ...store.patients.flatMap((p) => p.rx.filter((r) => r.status === 'Nova').map((r) => ({ id: `rx${r.id}`, icon: 'file', text: `${p.name} enviou uma receita`, when: r.date, act: () => open(p.id) }))),
     ...store.notas.filter((n) => n.ack).slice(0, 2).map((n) => ({ id: `nf${n.id}`, icon: 'check', text: `${n.name} deu ciência na nota ${n.n}`, when: n.ack, act: () => go('documentos') })),
     ...(store.requests ?? []).map((r) => ({ id: `rq${r.id}`, icon: 'pen', text: `${r.name} pediu ${r.kind.toLowerCase()}`, when: 'Hoje', act: () => go('documentos') })),
     ...(store.demo ? [{ id: 'mood', icon: 'smile', text: 'Camila Rocha: humor abaixo da média em 4 dos últimos 7 dias', when: 'Hoje', act: () => open('camila') }] : []),
@@ -335,6 +337,7 @@ function Agenda({ store, a }) {
     } catch (e) { setG((x) => ({ ...x, loading: false, error: e.message })); }
   }, [monday.getTime()]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (g.connected) reload(); }, [g.connected, reload]);
+  useEvery(60_000, () => { if (g.connected && !g.loading) reload(); });
 
   const all = [...events, ...(g.connected ? g.items : [])];
   const label = view === 'mes'
@@ -707,7 +710,7 @@ function CopilotDemo() {
 
       <div className="grid-2-1">
         <section className="panel">
-          <div className="panel-head"><div><h2 className="h3">Humor médio por mês</h2><p className="muted sm">Escala de 1 a 5 registrada pela paciente no app · marcos anotados por você</p></div></div>
+          <div className="panel-head"><div><h2 className="h3">Humor médio por mês</h2><p className="muted sm">Escala de 1 a 6 registrada pela paciente no app · marcos anotados por você</p></div></div>
           <div className="milestones"><span style={{ left: '12.5%' }}><Icon name="pill" size={12} /> Início da medicação</span><span style={{ left: '62.5%' }}><Icon name="flag" size={12} /> Mudança de emprego</span></div>
           <LineChart points={MONTHLY} height={180} marks={[1, 5]} bands={[[0, 2, 'band1'], [6, 8, 'band2']]} labels={['mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov']} />
           <div className="legend row gap16 mt8"><span className="row gap6"><span className="lg lg-band1" /> Primeiros 3 meses</span><span className="row gap6"><span className="lg lg-band2" /> Últimos 3 meses</span></div>
