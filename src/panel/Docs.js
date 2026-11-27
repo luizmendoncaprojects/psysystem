@@ -1,9 +1,29 @@
 import { useRef, useState } from 'react';
 import { Icon, Segmented, Chip, PageHead, Modal, toast, downloadText, usePaged, Pager } from '../ui';
 import { PLACEHOLDERS, fillDoc, TODAY_STR, ME } from '../data';
+import { api } from '../api';
 
 const STATUS_KIND = { Assinado: 'ok', 'Para assinar': 'warn', Rascunho: 'quiet', 'Rascunho da IA': 'ai', 'Em revisão': 'warn' };
 const makeCode = () => `KW-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+// Signed document from the API in the local shape. server: true = the signed PDF lives in the database.
+export const fromServerDoc = (d, patients = []) => ({
+  id: d.id, tpl: '', pid: d.patientId, name: patients.find((p) => p.id === d.patientId)?.name ?? 'Paciente', title: d.title, body: d.body,
+  date: new Date(d.signedAt).toLocaleDateString('pt-BR'), status: 'Assinado', delivery: 'No app', code: d.code, server: true,
+});
+// Real accounts sign on the server with the saved A1 certificate and the document is stored there; the demo keeps a fake code.
+async function signDocument(store, doc, requestId) {
+  if (store.demo) return { ...doc, code: makeCode() };
+  const { document } = await api.documents.sign({ patientId: doc.pid, requestId, title: doc.title, body: doc.body, crp: store.panelPrefs.account.crp });
+  if (requestId) store.setRequests((rs) => rs.filter((r) => r.id !== requestId));
+  return { ...doc, ...fromServerDoc(document, store.patients) };
+}
+// Signed PDF from the server, or a text copy in the demo. role: whose login authorizes the download.
+export function downloadDoc(d, role, account) {
+  if (!d.server) { downloadText(`${d.title} - ${d.name}.txt`, `${d.title.toUpperCase()}\n\n${d.body}\n\n${account.name} · ${account.crp}${d.code ? `\nCódigo: ${d.code}` : ''}`); return; }
+  const a = document.createElement('a');
+  a.href = api.documents.pdfUrl(d.id, role);
+  a.click();
+}
 const dateLong = (d) => {
   const M = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const [dd, mm, yy] = d.split('/');
@@ -61,13 +81,18 @@ export function DocEditor({ start, store, onClose }) {
     setBody(body.slice(0, at) + tag + body.slice(el?.selectionEnd ?? at));
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + tag.length, at + tag.length); });
   };
-  const save = (status) => {
+  const [busy, setBusy] = useState(false);
+  const save = async (status) => {
     if (!patient) { toast('Cadastre um paciente antes de emitir documentos.', 'warn'); return; }
-    const doc = {
+    let doc = {
       id: existing?.id ?? Date.now(), tpl: tplId, pid, name: patient.name, date: TODAY_STR, title, body: filled, status,
-      delivery: status === 'Assinado' ? 'No app' : '—', code: status === 'Assinado' ? makeCode() : null,
+      delivery: status === 'Assinado' ? 'No app' : '—', code: null,
     };
-    setDocs(existing ? docs.map((d) => (d.id === existing.id ? doc : d)) : [doc, ...docs]);
+    if (status === 'Assinado') {
+      setBusy(true);
+      try { doc = await signDocument(store, doc, start.requestId); } catch (e) { toast(e.message, 'warn'); setBusy(false); return; }
+    }
+    setDocs((all) => (existing ? all.map((d) => (d.id === existing.id ? doc : d)) : [doc, ...all]));
     toast(status === 'Assinado' ? `Assinado e enviado ao app de ${patient.name.split(' ')[0]}` : 'Rascunho salvo');
     onClose();
   };
@@ -85,7 +110,7 @@ export function DocEditor({ start, store, onClose }) {
       onClose={onClose}
       footer={locked ? (
         <>
-          <button className="btn-secondary" onClick={() => window.print()}><Icon name="download" size={16} /> Baixar PDF</button>
+          <button className="btn-secondary" onClick={() => (existing.server ? downloadDoc(existing, 'psicologa', panelPrefs.account) : window.print())}><Icon name="download" size={16} /> Baixar PDF</button>
           <button className="btn-primary" onClick={newVersion}><Icon name="copy" size={16} /> Criar nova versão</button>
         </>
       ) : (
@@ -93,7 +118,7 @@ export function DocEditor({ start, store, onClose }) {
           {blanks > 0 && <span className="foot-note"><Icon name="alert" size={14} /> {blanks} {blanks === 1 ? 'trecho' : 'trechos'} “___” para completar</span>}
           <button className="btn-secondary" onClick={() => window.print()}><Icon name="download" size={16} /> Baixar PDF</button>
           <button className="btn-secondary" onClick={() => save('Rascunho')}>Salvar rascunho</button>
-          <button className="btn-primary" disabled={blanks > 0} onClick={() => save('Assinado')}><Icon name="pen" size={16} /> Assinar e enviar ao app</button>
+          <button className="btn-primary" disabled={blanks > 0 || busy} onClick={() => save('Assinado')}><Icon name="pen" size={16} /> {busy ? 'Assinando…' : 'Assinar e enviar ao app'}</button>
         </>
       )}
     >
@@ -194,8 +219,10 @@ export function DocumentosOficiais({ store, openEditor }) {
   const rows = docs.filter((d) => f === 'todos' || (f === 'para' ? d.status === 'Para assinar' : f === 'ass' ? d.status === 'Assinado' : isDraft(d)));
   const pg = usePaged(rows, 8);
   const cur = docs.find((d) => d.id === sel) ?? rows[0];
-  const sign = (d) => {
-    setDocs(docs.map((x) => (x.id === d.id ? { ...x, status: 'Assinado', delivery: 'No app', code: makeCode(), date: TODAY_STR } : x)));
+  const sign = async (d) => {
+    let signed;
+    try { signed = await signDocument(store, d); } catch (e) { toast(e.message, 'warn'); return; }
+    setDocs((all) => all.map((x) => (x.id === d.id ? { ...signed, status: 'Assinado', delivery: 'No app', date: TODAY_STR } : x)));
     toast(`Assinado e enviado ao app de ${d.name.split(' ')[0]}`);
   };
 
@@ -205,6 +232,23 @@ export function DocumentosOficiais({ store, openEditor }) {
         title="Documentos oficiais" sub="Crie a partir de um modelo, edite o texto, assine e entregue no app do paciente"
         actions={<><button className="btn-secondary" onClick={() => setUpload(true)}><Icon name="upload" size={16} /> Subir modelo</button><button className="btn-primary" onClick={() => openEditor({})}><Icon name="plus" size={16} /> Novo documento</button></>}
       />
+      {(store.requests ?? []).length > 0 && (
+        <section className="panel">
+          <h2 className="h3">Pedidos dos pacientes</h2>
+          <ul className="list">
+            {store.requests.map((r) => (
+              <li key={r.id} className="list-row">
+                <span className="ico-tile tile-doc"><Icon name="pen" size={16} /></span>
+                <div className="grow"><p className="row-title">{r.kind}</p><p className="xs muted">{r.name}{r.why && ` · “${r.why}”`}</p></div>
+                <button className="btn-primary sm-btn" onClick={() => openEditor({ pid: r.patientId ?? store.patients.find((p) => p.name === r.name)?.id, title: r.kind, requestId: r.id })}><Icon name="file" size={14} /> Emitir</button>
+                <button className="btn-ghost-sm" onClick={async () => {
+                  try { if (!store.demo) await api.requests.done(r.id); store.setRequests((rs) => rs.filter((x) => x.id !== r.id)); toast('Pedido concluído'); } catch (e) { toast(e.message, 'warn'); }
+                }}>Concluir</button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <div className="templates">
         {templates.map((t) => (
           <button key={t.id} className="tpl" onClick={() => openEditor({ tpl: t.id })}>
@@ -230,6 +274,7 @@ export function DocumentosOficiais({ store, openEditor }) {
                     <td className="right">
                       <div className="row gap6 end">
                         {d.status === 'Para assinar' && <button className="btn-primary sm-btn" onClick={(e) => { e.stopPropagation(); sign(d); }}><Icon name="pen" size={14} /> Assinar</button>}
+                        {d.status === 'Assinado' && <button className="icon-btn" aria-label={`Baixar ${d.title}`} onClick={(e) => { e.stopPropagation(); downloadDoc(d, 'psicologa', panelPrefs.account); }}><Icon name="download" size={16} /></button>}
                         <button className="btn-ghost-sm" onClick={(e) => { e.stopPropagation(); openEditor({ docId: d.id }); }}>{d.status === 'Assinado' ? 'Abrir' : 'Editar'}</button>
                       </div>
                     </td>
@@ -245,7 +290,7 @@ export function DocumentosOficiais({ store, openEditor }) {
             <div className="panel-head"><h2 className="h3">Pré-visualização</h2><span className="muted sm">{cur.name}</span></div>
             <DocPaper title={cur.title} body={cur.body} account={panelPrefs.account} code={cur.code} date={cur.date} />
             <div className="row gap8 mt12">
-              <button className="btn-secondary grow" onClick={() => downloadText(`${cur.title} - ${cur.name}.txt`, `${cur.title.toUpperCase()}\n\n${cur.body}\n\n${panelPrefs.account.name} · ${panelPrefs.account.crp}${cur.code ? `\nCódigo: ${cur.code}` : ''}`)}><Icon name="download" size={16} /> Baixar</button>
+              <button className="btn-secondary grow" onClick={() => downloadDoc(cur, 'psicologa', panelPrefs.account)}><Icon name="download" size={16} /> Baixar</button>
               {cur.status === 'Assinado'
                 ? <button className="btn-primary grow" onClick={() => toast(`Reenviado ao app de ${cur.name.split(' ')[0]}`)}><Icon name="send" size={16} /> Reenviar ao app</button>
                 : <button className="btn-primary grow" onClick={() => openEditor({ docId: cur.id })}><Icon name="edit" size={16} /> Editar texto</button>}

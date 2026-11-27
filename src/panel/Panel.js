@@ -3,7 +3,7 @@ import { Icon, Avatar, Segmented, Toggle, LineChart, Chip, PageHead, Modal, toas
 import { PatientTable, PatientList, PatientProfile } from './Pacientes';
 import { brl, REPORT_KINDS, TODAY_STR } from '../data';
 import PanelSettings from './Settings';
-import { DocEditor, DocumentosOficiais } from './Docs';
+import { DocEditor, DocumentosOficiais, fromServerDoc } from './Docs';
 import { NewPatientModal, SessionModal, EventModal, RunSessionModal, fromServer } from './Modals';
 import { api } from '../api';
 
@@ -23,15 +23,22 @@ export default function Panel({ store }) {
   // Real patients (created through the API) join the demo list; their link status comes from the server.
   const { setPatients } = store;
   const defaultPerms = prefs.defaultPerms;
+  const { setDocs, setRequests, demo } = store;
   const loadPatients = useCallback(() => {
-    api.patients.list().then(({ patients: rows }) => setPatients((ps) => {
-      const byId = new Map(rows.map((r) => [r.id, fromServer(r, defaultPerms)]));
-      const kept = ps.map((p) => (byId.has(p.id) ? { ...p, name: byId.get(p.id).name, status: byId.get(p.id).status, link: byId.get(p.id).link } : p));
-      return [...[...byId.values()].filter((r) => !ps.some((p) => p.id === r.id)), ...kept];
-    }), () => {}); // offline or demo: keep the local list
-  }, [setPatients, defaultPerms]);
+    api.patients.list().then(({ patients: rows }) => {
+      setPatients((ps) => {
+        const byId = new Map(rows.map((r) => [r.id, fromServer(r, defaultPerms)]));
+        const kept = ps.map((p) => (byId.has(p.id) ? { ...p, name: byId.get(p.id).name, status: byId.get(p.id).status, link: byId.get(p.id).link } : p));
+        return [...[...byId.values()].filter((r) => !ps.some((p) => p.id === r.id)), ...kept];
+      });
+      if (demo) return;
+      // Signed documents and patient requests live in the database: replace the server ones, keep local drafts.
+      api.documents.list().then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d, rows)), ...all.filter((x) => !x.server)]), () => {});
+      api.requests.list().then(({ requests }) => setRequests(requests), () => {});
+    }, () => {}); // offline or demo: keep the local list
+  }, [setPatients, setDocs, setRequests, defaultPerms, demo]);
   useEffect(loadPatients, [loadPatients]);
-  useEvery(60_000, loadPatients); // picks up patients who linked meanwhile
+  useEvery(60_000, loadPatients); // picks up linked patients, new documents and requests
   const closeModal = () => setModal(null);
   const actions = {
     go, open,
@@ -83,7 +90,7 @@ export default function Panel({ store }) {
           {page === 'relatorios' && <Relatorios store={store} a={actions} />}
           {page === 'documentos' && <Documentos store={store} a={actions} />}
           {page === 'copilot' && <Copilot demo={store.demo} />}
-          {page === 'config' && <PanelSettings prefs={prefs} setPrefs={setPanelPrefs} onLogout={() => store.logout('psicologa')} />}
+          {page === 'config' && <PanelSettings store={store} prefs={prefs} setPrefs={setPanelPrefs} onLogout={() => store.logout('psicologa')} />}
         </main>
       </div>
 
@@ -134,7 +141,7 @@ function Notifications({ store, open, go }) {
   const items = [
     ...store.patients.flatMap((p) => p.rx.filter((r) => r.status === 'Nova').map((r) => ({ id: `rx${r.id}`, icon: 'file', text: `${p.name} enviou uma receita`, when: r.date, act: () => open(p.id) }))),
     ...store.notas.filter((n) => n.ack).slice(0, 2).map((n) => ({ id: `nf${n.id}`, icon: 'check', text: `${n.name} deu ciência na nota ${n.n}`, when: n.ack, act: () => go('documentos') })),
-    ...(store.requests ?? []).map((r) => ({ id: `rq${r.id}`, icon: 'pen', text: `${r.name} pediu ${r.kind.toLowerCase()}`, when: 'Hoje', act: () => go('documentos') })),
+    ...(store.requests ?? []).map((r) => ({ id: `rq${r.id}`, icon: 'pen', text: `${r.name} pediu ${r.kind.toLowerCase()}`, when: r.createdAt ? new Date(r.createdAt).toLocaleDateString('pt-BR') : 'Hoje', act: () => go('documentos') })),
     ...(store.demo ? [{ id: 'mood', icon: 'smile', text: 'Camila Rocha: humor abaixo da média em 4 dos últimos 7 dias', when: 'Hoje', act: () => open('camila') }] : []),
   ];
   const unread = items.filter((i) => !read.includes(i.id)).length;
@@ -282,7 +289,7 @@ function googleToGrid(items, monday) {
   });
 }
 
-function GoogleSync({ g, setG, reload }) {
+export function GoogleSync({ g, setG, reload }) {
   const [busy, setBusy] = useState(false);
   const connect = async () => {
     setBusy(true);

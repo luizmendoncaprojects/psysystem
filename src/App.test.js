@@ -96,7 +96,7 @@ test('new patient: psychologist generates a link code without typing a name', as
   expect(screen.getByText(/Aguardando o paciente criar a conta/)).toBeInTheDocument();
 });
 
-test('document editor fills placeholders, signs and delivers to the patient app', () => {
+test('document editor fills placeholders, signs and delivers to the patient app', async () => {
   render(<App initialSessions={SESSIONS} />);
   toPanel();
   fireEvent.click(screen.getByRole('button', { name: /Documentos e notas/ }));
@@ -106,6 +106,7 @@ test('document editor fills placeholders, signs and delivers to the patient app'
   expect(screen.getAllByText(`Declaro que Luiz Mendonça esteve em atendimento em ${new Date().toLocaleDateString('pt-BR')}.`).length).toBeGreaterThan(0);
   fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Declaração de teste' } });
   fireEvent.click(screen.getByRole('button', { name: /Assinar e enviar ao app/ }));
+  await screen.findByText(/Assinado e enviado ao app/); // signing is async
   toApp();
   fireEvent.click(screen.getByRole('button', { name: /^Mais: documentos/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Documentos' }));

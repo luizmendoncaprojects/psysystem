@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon, MoodPicker, MoodFace, Avatar, Segmented, Toggle, MOODS, Modal, toast, downloadText, useEvery } from '../ui';
-import { DocPaper } from '../panel/Docs';
+import { DocPaper, downloadDoc, fromServerDoc } from '../panel/Docs';
+import { api } from '../api';
 import { EMOTIONS, fmtL, habitSub, brl, ME } from '../data';
 import Settings from './Settings';
 
@@ -31,7 +32,14 @@ export default function Patient({ store }) {
   const [fab, setFab] = useState(false);
   const [dayEmotion, setDayEmotion] = useState(null);
   const [, setTick] = useState(0);
-  useEvery(60_000, () => setTick((t) => t + 1)); // re-render each minute: dates and times stay current
+  // Each minute: re-render (dates stay current) and, with a real login, fetch the signed documents.
+  const { demo, setDocs } = store;
+  const loadDocs = () => {
+    if (demo) return;
+    api.documents.list().then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d)), ...all.filter((x) => !x.server)]), () => {});
+  };
+  useEffect(loadDocs, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEvery(60_000, () => { setTick((t) => t + 1); loadDocs(); });
   const touch = useRef(null);
   const tabs = TABS.filter((t) => t[3](perms));
   const cur = EXTRA.includes(tab) || tabs.some((t) => t[0] === tab) ? tab : 'hoje'; // tab may be turned off by the psychologist
@@ -675,13 +683,18 @@ const DOC_KINDS = ['Declaração de comparecimento', 'Atestado psicológico', 'R
 function Documentos({ store }) {
   const { notas, setNotas, docs, panelPrefs, requests, setRequests, patientPrefs } = store;
   const mine = notas.filter((r) => r.pid === store.myId);
-  const myDocs = docs.filter((d) => d.pid === ME && d.status === 'Assinado');
+  const myDocs = docs.filter((d) => d.pid === (store.demo ? ME : store.myId) && d.status === 'Assinado');
+  const [sending, setSending] = useState(false);
   const [f, setF] = useState('nf');
   const [view, setView] = useState(null);
   const [asking, setAsking] = useState(null);
   const notaText = (r) => `NFS-e ${r.n}\nTomador: ${patientPrefs.account.name}\nCompetência: ${r.comp}\nServiço: psicoterapia (${r.sessions} sessões)\nValor: ${brl(r.value)}`;
-  const request = () => {
-    setRequests([...requests, { id: Date.now(), name: patientPrefs.account.name, kind: asking.kind, why: asking.why }]);
+  const request = async () => {
+    if (store.demo) setRequests([...requests, { id: Date.now(), name: patientPrefs.account.name, kind: asking.kind, why: asking.why }]);
+    else {
+      setSending(true);
+      try { await api.requests.create(asking.kind, asking.why); } catch (e) { toast(e.message, 'warn'); return; } finally { setSending(false); }
+    }
     toast('Pedido enviado à sua psicóloga');
     setAsking(null);
   };
@@ -729,6 +742,7 @@ function Documentos({ store }) {
                   <p className="muted sm">{d.date} · <span className="ok-txt">Assinado</span></p>
                 </button>
                 <button className="icon-btn" aria-label={`Ver ${d.title}`} onClick={() => setView(d)}><Icon name="eye" size={18} /></button>
+                <button className="icon-btn" aria-label={`Baixar ${d.title}`} onClick={() => downloadDoc(d, 'paciente', panelPrefs.account)}><Icon name="download" size={18} /></button>
               </li>
             ))}
           </ul>
@@ -745,13 +759,13 @@ function Documentos({ store }) {
 
       {view && (
         <Modal sheet title={view.title} sub={`Assinado em ${view.date}`} onClose={() => setView(null)}
-          footer={<button className="btn-primary" onClick={() => downloadText(`${view.title}.txt`, `${view.title.toUpperCase()}\n\n${view.body}\n\n${panelPrefs.account.name} · ${panelPrefs.account.crp}\nCódigo: ${view.code}`)}><Icon name="download" size={16} /> Baixar</button>}>
+          footer={<button className="btn-primary" onClick={() => downloadDoc(view, 'paciente', panelPrefs.account)}><Icon name="download" size={16} /> Baixar</button>}>
           <div className="paper-scale"><DocPaper title={view.title} body={view.body} account={panelPrefs.account} code={view.code} date={view.date} /></div>
         </Modal>
       )}
       {asking && (
         <Modal sheet title="Solicitar documento" sub="Sua psicóloga recebe o pedido e avisa quando o documento estiver aqui." onClose={() => setAsking(null)}
-          footer={<><button className="btn-secondary" onClick={() => setAsking(null)}>Cancelar</button><button className="btn-primary" onClick={request}>Enviar pedido</button></>}>
+          footer={<><button className="btn-secondary" onClick={() => setAsking(null)}>Cancelar</button><button className="btn-primary" disabled={sending} onClick={request}>{sending ? "Enviando…" : "Enviar pedido"}</button></>}>
           <label className="field">Documento<select className="select" value={asking.kind} onChange={(e) => setAsking({ ...asking, kind: e.target.value })}>{DOC_KINDS.map((k) => <option key={k}>{k}</option>)}</select></label>
           <label className="field">Para que você precisa (opcional)<textarea rows={3} value={asking.why} onChange={(e) => setAsking({ ...asking, why: e.target.value })} placeholder="Ex.: apresentar no trabalho" /></label>
         </Modal>

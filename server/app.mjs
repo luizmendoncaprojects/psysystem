@@ -3,6 +3,8 @@ import crypto from 'node:crypto';
 import { sign, verifyToken, rateLimiter } from './lib/security.mjs';
 import { auth, db, isConfigured as supabaseReady } from './lib/supabase.mjs';
 import * as google from './lib/google.mjs';
+import * as cert from './lib/certificate.mjs';
+import { buildPdf, signPdf } from './lib/signpdf.mjs';
 import { newCode, normalizeCode, isCode, validateSignup, CODE_HOURS } from './lib/linking.mjs';
 
 const PORT = Number(process.env.API_PORT || 4000);
@@ -32,10 +34,10 @@ const cookies = (req) => Object.fromEntries((req.headers.cookie || '').split(';'
 const cookieName = (role) => `kw_${role}`;
 const setCookie = (role, value, maxAgeSec) => `${cookieName(role)}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${PROD ? '; Secure' : ''}`;
 
-async function body(req) {
+async function body(req, max = 10_000) {
   if (!(req.headers['content-type'] || '').startsWith('application/json')) throw httpError(415, 'Envie JSON.'); // blocks cross-site form posts
   let raw = '';
-  for await (const chunk of req) { raw += chunk; if (raw.length > 10_000) throw httpError(413, 'Corpo grande demais.'); }
+  for await (const chunk of req) { raw += chunk; if (raw.length > max) throw httpError(413, 'Corpo grande demais.'); }
   try { return raw ? JSON.parse(raw) : {}; } catch { throw httpError(400, 'JSON inválido.'); }
 }
 
@@ -69,6 +71,9 @@ const patientView = (p) => ({
   code: p.user_id ? null : p.link_code, codeExpiresAt: p.user_id ? null : p.code_expires_at,
   link: p.user_id || !p.link_code ? null : linkUrl(p.link_code),
 });
+const DOC_COLS = 'id,patient_id,title,body,code,signed_by,signed_at'; // everything but the PDF bytes
+// title, body, signer and PDF are stored encrypted (AES-256-GCM, CERT_KEY): the database only holds ciphertext.
+const docView = (d) => ({ id: d.id, patientId: d.patient_id, title: cert.unseal(d.title), body: cert.unseal(d.body), code: d.code, signedBy: d.signed_by && cert.unseal(d.signed_by), signedAt: d.signed_at });
 // Retries on the rare unique-code collision (PostgREST answers 409).
 async function withFreshCode(write) {
   for (let i = 0; i < 3; i++) {
@@ -176,6 +181,121 @@ const routes = {
     }
     await db.update('patients', `id=eq.${row.patient_id}`, { name: s.name }); // record takes the name the patient signed up with
     issue(res, 200, { ...s, patientId: row.patient_id, psychologistId: row.psychologist_id }, { psychologistName: row.psychologist_name });
+  },
+
+  /* ----- digital certificate (psychologist) ----- */
+  'GET /api/certificate': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const c = await db.one('certificates', 'psychologist_id', s.uid);
+    send(res, 200, { certificate: c && { fileName: c.file_name, subject: c.subject, issuer: c.issuer, validUntil: c.valid_until, uploadedAt: c.uploaded_at } });
+  },
+
+  // Upload: the password must open the file, so a typo is caught now and not at signing time.
+  'POST /api/certificate': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const { fileName, pfx, password } = await body(req, 200_000);
+    if (typeof pfx !== 'string' || !pfx || typeof password !== 'string' || !password) return fail(res, 400, 'Envie o arquivo do certificado e a senha.');
+    const name = String(fileName ?? '').slice(0, 200);
+    if (!/\.(pfx|p12)$/i.test(name)) return fail(res, 400, 'Use o arquivo .pfx ou .p12 do certificado A1.');
+    const info = cert.inspect(pfx, password);
+    await db.upsert('certificates', { psychologist_id: s.uid, file_name: name, pfx_enc: cert.seal(pfx), password_enc: cert.seal(password), subject: info.subject, issuer: info.issuer, valid_until: info.validUntil, uploaded_at: new Date().toISOString() });
+    send(res, 200, { certificate: { fileName: name, ...info, uploadedAt: new Date().toISOString() } });
+  },
+
+  // Showing the saved certificate password requires the login password again.
+  'POST /api/certificate/reveal': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const { password } = await body(req);
+    if (typeof password !== 'string' || !password) return fail(res, 400, 'Digite sua senha de login.');
+    if (!loginLimit(`${s.email}|${clientIp(req)}`)) return fail(res, 429, 'Muitas tentativas. Aguarde 15 minutos e tente de novo.');
+    try { await auth.signIn(s.email, password); } catch (e) {
+      if (e.status === 400) return fail(res, 401, 'Senha de login incorreta.');
+      throw e;
+    }
+    const c = await db.one('certificates', 'psychologist_id', s.uid);
+    if (!c) return fail(res, 404, 'Nenhum certificado salvo.');
+    send(res, 200, { password: cert.unseal(c.password_enc) });
+  },
+
+  // Builds the PDF and signs it with the saved certificate. The browser never holds the certificate or its password.
+  'POST /api/documents/sign': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const b = await body(req, 100_000);
+    const text = (v, max) => String(v ?? '').slice(0, max);
+    if (!text(b.body, 50_000).trim()) return fail(res, 400, 'O documento está vazio.');
+    if (!UUID.test(String(b.patientId))) return fail(res, 400, 'Escolha um paciente vinculado ao app.');
+    const [patient] = await db.list('patients', `id=eq.${b.patientId}&psychologist_id=eq.${s.uid}&limit=1`);
+    if (!patient) return fail(res, 404, 'Paciente não encontrado.');
+    const c = await db.one('certificates', 'psychologist_id', s.uid);
+    if (!c) return fail(res, 409, 'Envie seu certificado digital em Configurações › Certificado digital antes de assinar.');
+    if (c.valid_until && new Date(c.valid_until) < new Date()) return fail(res, 409, 'Seu certificado digital venceu. Envie um novo em Configurações.');
+    const tz = process.env.APP_TIMEZONE || 'America/Sao_Paulo';
+    const now = new Date();
+    const code = `KW-${crypto.randomBytes(6).toString('hex').toUpperCase().match(/.{4}/g).join('-')}`; // unique key (UNIQUE in the table)
+    const pdf = await buildPdf({
+      title: text(b.title, 200) || 'Documento', body: text(b.body, 50_000), author: s.name, crp: text(b.crp, 60), place: text(b.place, 80) || 'Goiânia',
+      dateLong: now.toLocaleDateString('pt-BR', { timeZone: tz, day: 'numeric', month: 'long', year: 'numeric' }),
+      signedBy: c.subject, issuer: c.issuer, signedAt: now.toLocaleString('pt-BR', { timeZone: tz, dateStyle: 'short', timeStyle: 'short' }), code,
+    });
+    const signed = await signPdf(pdf, Buffer.from(cert.unseal(c.pfx_enc), 'base64'), cert.unseal(c.password_enc));
+    const row = await db.insert('documents', { psychologist_id: s.uid, patient_id: patient.id, title: cert.seal(text(b.title, 200) || 'Documento'), body: cert.seal(text(b.body, 50_000)), code, pdf: cert.seal(signed.toString('base64')), signed_by: cert.seal(c.subject), signed_at: now.toISOString() });
+    if (UUID.test(String(b.requestId))) await db.update('document_requests', `id=eq.${b.requestId}&psychologist_id=eq.${s.uid}`, { status: 'Concluído' });
+    send(res, 201, { document: docView(row) });
+  },
+
+  // Signed documents: the psychologist sees all of hers; a patient sees only their own.
+  'GET /api/documents': async (req, res) => {
+    const s = session(req, 'psicologa') ?? session(req, 'paciente');
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    const who = s.role === 'psicologa' ? `psychologist_id=eq.${s.uid}` : `patient_id=eq.${s.patientId}`;
+    if (s.role === 'paciente' && !UUID.test(String(s.patientId))) return send(res, 200, { documents: [] });
+    const rows = await db.list('documents', `${who}&select=${DOC_COLS}&order=signed_at.desc`);
+    send(res, 200, { documents: rows.map(docView) });
+  },
+
+  // The signed PDF itself, as a file download. ?role= picks which login to use when both are open.
+  'GET /api/documents/pdf': async (req, res, url) => {
+    const s = session(req, url.searchParams.get('role') === 'paciente' ? 'paciente' : 'psicologa');
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    const id = url.searchParams.get('id');
+    if (!UUID.test(String(id))) return fail(res, 400, 'Documento inválido.');
+    const d = await db.one('documents', 'id', id);
+    const mine = d && (s.role === 'psicologa' ? d.psychologist_id === s.uid : d.patient_id === s.patientId);
+    if (!mine) return fail(res, 404, 'Documento não encontrado.');
+    const file = `${cert.unseal(d.title)} - ${d.code}.pdf`.replace(/[^\w\s.()À-ÿ-]/g, '');
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${file.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(file)}`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.end(Buffer.from(cert.unseal(d.pdf), 'base64'));
+  },
+
+  /* ----- document requests ----- */
+  'POST /api/requests': async (req, res) => {
+    const s = requireRole(req, res, 'paciente'); if (!s) return;
+    if (!UUID.test(String(s.patientId)) || !s.psychologistId) return fail(res, 409, 'Vincule sua conta a uma psicóloga primeiro.');
+    const { kind, why } = await body(req);
+    const k = String(kind ?? '').trim();
+    if (k.length < 2 || k.length > 120) return fail(res, 400, 'Escolha o documento.');
+    const row = await db.insert('document_requests', { psychologist_id: s.psychologistId, patient_id: s.patientId, kind: cert.seal(k), why: cert.seal(String(why ?? '').trim().slice(0, 500)) });
+    send(res, 201, { request: { id: row.id } });
+  },
+
+  'GET /api/requests': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const rows = await db.list('document_requests', `psychologist_id=eq.${s.uid}&status=eq.Pendente&select=*,patients(name)&order=created_at.desc`);
+    send(res, 200, { requests: rows.map((r) => ({ id: r.id, patientId: r.patient_id, name: r.patients?.name ?? 'Paciente', kind: cert.unseal(r.kind), why: cert.unseal(r.why) || null, createdAt: r.created_at })) });
+  },
+
+  'POST /api/requests/done': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    const { id } = await body(req);
+    if (!UUID.test(String(id))) return fail(res, 400, 'Pedido inválido.');
+    await db.update('document_requests', `id=eq.${id}&psychologist_id=eq.${s.uid}`, { status: 'Concluído' });
+    send(res, 200, { ok: true });
+  },
+
+  'POST /api/certificate/remove': async (req, res) => {
+    const s = requireRole(req, res, 'psicologa'); if (!s) return;
+    await db.remove('certificates', 'psychologist_id', s.uid);
+    send(res, 200, { ok: true });
   },
 
   /* ----- Google Calendar ----- */

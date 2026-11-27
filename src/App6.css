@@ -138,3 +138,18 @@ html:has(.shell-paciente), body:has(.shell-paciente) { overflow: hidden; overscr
 .rx-send .file-btn.block { flex: 1; justify-content: center; }
 .cal-add { margin-top: 14px; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .cal-add .chip { min-height: 32px; cursor: pointer; text-decoration: none; color: #fff; }
+
+/* ---------- Panel settings: left nav ---------- */
+.settings-layout { display: grid; grid-template-columns: 220px minmax(0, 760px); gap: 24px; align-items: start; }
+.settings-nav { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 2px; }
+.settings-nav button { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--ink-2); text-align: left; }
+.settings-nav button:hover { background: var(--surface-2); color: var(--ink); }
+.settings-nav button.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+@media (max-width: 900px) {
+  .settings-layout { grid-template-columns: 1fr; gap: 14px; }
+  .settings-nav { position: static; flex-direction: row; overflow-x: auto; margin: 0 -16px; padding: 0 16px 4px; scrollbar-width: none; }
+  .settings-nav button { flex-shrink: 0; white-space: nowrap; }
+}
+.pass-row { display: flex; gap: 6px; align-items: center; }
+.pass-row input { flex: 1; min-width: 0; }
+.cert-pass { font-size: 14px; letter-spacing: .04em; }

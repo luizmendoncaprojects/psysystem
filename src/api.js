@@ -32,6 +32,22 @@ export const api = {
     create: () => req('/patients', { method: 'POST', body: {} }),
     newCode: (id) => req('/patients/code', { method: 'POST', body: { id } }),
   },
+  documents: {
+    sign: (doc) => req('/documents/sign', { method: 'POST', body: doc }),
+    list: () => req('/documents'),
+    pdfUrl: (id, role) => `/api/documents/pdf?id=${encodeURIComponent(id)}&role=${role}`,
+  },
+  requests: {
+    create: (kind, why) => req('/requests', { method: 'POST', body: { kind, why } }),
+    list: () => req('/requests'),
+    done: (id) => req('/requests/done', { method: 'POST', body: { id } }),
+  },
+  certificate: {
+    get: () => req('/certificate'),
+    upload: (fileName, pfx, password) => req('/certificate', { method: 'POST', body: { fileName, pfx, password } }),
+    reveal: (password) => req('/certificate/reveal', { method: 'POST', body: { password } }),
+    remove: () => req('/certificate/remove', { method: 'POST', body: {} }),
+  },
   google: {
     status: () => req('/google/status'),
     connect: () => req('/google/connect'),
