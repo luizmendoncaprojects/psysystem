@@ -56,7 +56,7 @@ export default function Patient({ store }) {
           {cur === 'hoje' && <Hoje {...ctx} />}
           {cur === 'humor' && <Humor {...ctx} />}
           {cur === 'rotina' && <Rotina {...ctx} />}
-          {cur === 'diario' && <DiarioTab perms={perms} sub={diarioSub} setSub={setDiarioSub} />}
+          {cur === 'diario' && <DiarioTab demo={store.demo} perms={perms} sub={diarioSub} setSub={setDiarioSub} />}
           {cur === 'docs' && <Documentos store={store} />}
           {cur === 'config' && <Settings prefs={prefs} setPrefs={setPatientPrefs} onBack={() => go('hoje')} onLogout={() => store.logout('paciente')} />}
         </div>
@@ -88,7 +88,7 @@ function Header({ eyebrow, title, sub, right }) {
 
 /* ---------- HOJE ---------- */
 const MOODS_LABEL = MOODS.map((m) => m.label);
-const TODAY = new Date(2026, 10, 16);
+const TODAY = new Date();
 const dayLabel = (off) => {
   const d = new Date(TODAY);
   d.setDate(d.getDate() + off);
@@ -97,7 +97,7 @@ const dayLabel = (off) => {
 };
 const PAST_WATER = [1500, 2000, 1250, 1750, 1000, 2000]; // index = -off - 1
 
-function Hoje({ patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits }) {
+function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits }) {
   const [off, setOff] = useState(0); // 0 = hoje, -1 = ontem… past days are read-only except sleep
   const past = off < 0;
   const day = 6 + off; // index into habit.week
@@ -109,8 +109,8 @@ function Hoje({ patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, w
     })) : []),
     ...(perms.habitos ? habits.map((h) => ({ id: `h${h.id}`, hid: h.id, icon: h.icon, t: h.name, s: `Hábito · ${[h.detail, h.reminder && `às ${h.reminder}`].filter(Boolean).join(' · ') || h.freq.toLowerCase()}`, done: !!h.week[day] })) : []),
   ];
-  const dayMood = past ? WEEK[6 + off][1] : mood;
-  const dayWater = past ? PAST_WATER[-off - 1] : water;
+  const dayMood = past ? (demo ? WEEK[6 + off][1] : null) : mood; // real mode: past days are not stored yet
+  const dayWater = past ? (demo ? PAST_WATER[-off - 1] : 0) : water;
   const toggle = (it) => (it.med
     ? setTaken((t) => { const n = { ...t }; if (n[it.id]) delete n[it.id]; else n[it.id] = '09:41'; return n; })
     : setHabits(habits.map((h) => (h.id === it.hid ? { ...h, week: h.week.map((w, n) => (n === 6 ? 1 - w : w)) } : h))));
@@ -133,7 +133,7 @@ function Hoje({ patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, w
 
       {past && <p className="readonly-note"><Icon name="lock" size={14} /> Dias anteriores são só para consulta. Você pode ajustar apenas o sono.</p>}
 
-      {perms.humor && (past ? (
+      {perms.humor && (past ? (!dayMood ? <p className="hint">Sem registro de humor neste dia.</p> : 
         <section className="card row gap12">
           <MoodFace v={dayMood} size={40} />
           <div><p className="muted sm">Humor registrado</p><p className="row-title">{MOODS_LABEL[dayMood - 1]}</p></div>
@@ -283,7 +283,7 @@ function Chips({ items, value, onToggle, tone }) {
   );
 }
 
-function Humor({ perms, mood, setMood, setEmotions }) {
+function Humor({ demo, perms, mood, setMood, setEmotions }) {
   const [feel, setFeel] = useState([]);
   const [inf, setInf] = useState([]);
   const [intensity, setIntensity] = useState(3);
@@ -330,7 +330,7 @@ function Humor({ perms, mood, setMood, setEmotions }) {
       </button>
       <p className="hint center"><Icon name="eye" size={14} /> Sua psicóloga verá este registro</p>
 
-      {perms.humor && (
+      {perms.humor && demo && (
         <section className="card">
           <div className="row-between">
             <h2 className="h3">Últimos 7 dias</h2>
@@ -501,11 +501,11 @@ const INITIAL_TOPICS = [
 ];
 const PROMPT = 'O que te trouxe um pouco de calma hoje?';
 
-function DiarioTab({ perms, sub, setSub }) {
+function DiarioTab({ demo, perms, sub, setSub }) {
   const opts = [...(perms.diario ? [['diario', 'Diário']] : []), ...(perms.pauta ? [['pauta', 'Assuntos da sessão']] : [])];
   const cur = opts.some((o) => o[0] === sub) ? sub : opts[0][0];
-  const [entries, setEntries] = useState(INITIAL_ENTRIES);
-  const [topics, setTopics] = useState(INITIAL_TOPICS);
+  const [entries, setEntries] = useState(demo ? INITIAL_ENTRIES : []);
+  const [topics, setTopics] = useState(demo ? INITIAL_TOPICS : []);
   const [writing, setWriting] = useState(null); // { t } prefill
   const save = (e) => {
     setEntries([{ ...e, id: Date.now(), d: 'Hoje · 09:41' }, ...entries]);
@@ -605,7 +605,7 @@ const DOC_KINDS = ['Declaração de comparecimento', 'Atestado psicológico', 'R
 
 function Documentos({ store }) {
   const { notas, setNotas, docs, panelPrefs, requests, setRequests, patientPrefs } = store;
-  const mine = notas.filter((r) => r.pid === ME);
+  const mine = notas.filter((r) => r.pid === store.myId);
   const myDocs = docs.filter((d) => d.pid === ME && d.status === 'Assinado');
   const [f, setF] = useState('nf');
   const [view, setView] = useState(null);

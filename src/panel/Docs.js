@@ -40,7 +40,7 @@ export function DocEditor({ start, store, onClose }) {
   const existing = start.docId ? docs.find((d) => d.id === start.docId) : null;
   const firstTpl = templates.find((t) => t.id === (existing?.tpl ?? start.tpl)) ?? templates[0];
   const [tplId, setTplId] = useState(firstTpl.id);
-  const [pid, setPid] = useState(existing?.pid ?? start.pid ?? ME);
+  const [pid, setPid] = useState(existing?.pid ?? start.pid ?? (patients.some((p) => p.id === ME) ? ME : patients[0]?.id));
   const [title, setTitle] = useState(existing?.title ?? start.title ?? firstTpl.name);
   const [body, setBody] = useState(existing?.body ?? start.body ?? firstTpl.body);
   const ta = useRef(null);
@@ -62,6 +62,7 @@ export function DocEditor({ start, store, onClose }) {
     requestAnimationFrame(() => { el?.focus(); el?.setSelectionRange(at + tag.length, at + tag.length); });
   };
   const save = (status) => {
+    if (!patient) { toast('Cadastre um paciente antes de emitir documentos.', 'warn'); return; }
     const doc = {
       id: existing?.id ?? Date.now(), tpl: tplId, pid, name: patient.name, date: TODAY_STR, title, body: filled, status,
       delivery: status === 'Assinado' ? 'No app' : '—', code: status === 'Assinado' ? makeCode() : null,

@@ -172,7 +172,7 @@ export const INITIAL_DOCS = [
 export const REPORT_KINDS = ['relatorio', 'laudo', 'parecer'];
 
 const MONTHS_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-export const TODAY_STR = '16/11/2026';
+export const TODAY_STR = new Date().toLocaleDateString('pt-BR'); // dd/mm/aaaa
 export function fillDoc(body, { patient, account, price }) {
   const [d, mo, y] = TODAY_STR.split('/');
   const map = {

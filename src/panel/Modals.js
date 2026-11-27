@@ -89,11 +89,12 @@ export function SessionModal({ store, onClose, event, pid, preset }) {
   const active = patients.filter((p) => p.status !== 'Alta');
   const [d, setD] = useState(event
     ? { pid: event.pid, day: event.day, start: event.start, dur: event.dur * 60, mode: event.sub.startsWith('Presencial') ? 'Presencial' : 'Online', repeat: false }
-    : { pid: pid ?? active[0].id, day: 0, start: 15, dur: panelPrefs.sessionMin, mode: 'Online', repeat: true, ...preset });
+    : { pid: pid ?? active[0]?.id, day: 0, start: 15, dur: panelPrefs.sessionMin, mode: 'Online', repeat: true, ...preset });
   const set = (k, num) => (e) => setD({ ...d, [k]: num ? +e.target.value : e.target.value });
   const clash = events.find((x) => x.id !== event?.id && x.day === d.day && d.start < x.start + x.dur && x.start < d.start + d.dur / 60);
   const save = () => {
     const p = patients.find((x) => x.id === d.pid);
+    if (!p) { toast('Cadastre um paciente antes de agendar.', 'warn'); return; }
     const ev = { id: event?.id ?? Date.now(), day: d.day, start: d.start, dur: Math.max(0.5, d.dur / 60), title: p.name, sub: d.mode, kind: d.mode === 'Online' ? 'on' : 'in', pid: p.id };
     setEvents(event ? events.map((x) => (x.id === event.id ? ev : x)) : [...events, ev]);
     const g = store.google;

@@ -80,7 +80,7 @@ export default function Panel({ store }) {
           {page === 'pacientes' && (patient ? <PatientProfile key={pid} p={patient} store={store} a={actions} /> : <PatientList patients={patients} open={open} onNew={actions.newPatient} />)}
           {page === 'relatorios' && <Relatorios store={store} a={actions} />}
           {page === 'documentos' && <Documentos store={store} a={actions} />}
-          {page === 'copilot' && <Copilot />}
+          {page === 'copilot' && <Copilot demo={store.demo} />}
           {page === 'config' && <PanelSettings prefs={prefs} setPrefs={setPanelPrefs} onLogout={() => store.logout('psicologa')} />}
         </main>
       </div>
@@ -133,7 +133,7 @@ function Notifications({ store, open, go }) {
     ...store.patients.flatMap((p) => p.rx.filter((r) => r.status === 'Nova').map((r) => ({ id: `rx${r.id}`, icon: 'file', text: `${p.name} enviou receita de ${r.med}`, when: r.date, act: () => open(p.id) }))),
     ...store.notas.filter((n) => n.ack).slice(0, 2).map((n) => ({ id: `nf${n.id}`, icon: 'check', text: `${n.name} deu ciência na nota ${n.n}`, when: n.ack, act: () => go('documentos') })),
     ...(store.requests ?? []).map((r) => ({ id: `rq${r.id}`, icon: 'pen', text: `${r.name} pediu ${r.kind.toLowerCase()}`, when: 'Hoje', act: () => go('documentos') })),
-    { id: 'mood', icon: 'smile', text: 'Camila Rocha: humor abaixo da média em 4 dos últimos 7 dias', when: 'Hoje', act: () => open('camila') },
+    ...(store.demo ? [{ id: 'mood', icon: 'smile', text: 'Camila Rocha: humor abaixo da média em 4 dos últimos 7 dias', when: 'Hoje', act: () => open('camila') }] : []),
   ];
   const unread = items.filter((i) => !read.includes(i.id)).length;
   return (
@@ -166,21 +166,28 @@ const ATTN = [
 ];
 function Dashboard({ store, a }) {
   const { patients, events, docs } = store;
-  const today = events.filter((e) => e.day === 0 && e.kind !== 'g').sort((x, y) => x.start - y.start);
+  const now = new Date();
+  const todayIdx = (now.getDay() + 6) % 7; // 0 = Monday … 4 = Friday (agenda grid)
+  const nowH = now.getHours() + now.getMinutes() / 60;
+  const today = events.filter((e) => e.day === todayIdx && e.kind !== 'g').sort((x, y) => x.start - y.start);
   const sessions = events.filter((e) => e.kind !== 'g');
   const active = patients.filter((p) => p.status.startsWith('Ativ')).length;
   const toSign = docs.filter((d) => d.status === 'Para assinar').length;
-  const next = today.find((e) => e.start > 9.68);
+  const next = today.find((e) => e.start > nowH);
+  const hello = now.getHours() < 12 ? 'Bom dia' : now.getHours() < 18 ? 'Boa tarde' : 'Boa noite';
+  const dateLabel = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace('-feira', '');
+  const attn = ATTN.filter(([id]) => patients.some((p) => p.id === id));
+  const usage = patients.length ? Math.round(patients.filter((p) => p.use > 0).length / patients.length * 100) : 0;
   return (
     <>
       <PageHead
-        title="Bom dia, Débora" sub={`Segunda, 16 de novembro · ${today.length} sessões hoje${next ? ` · a próxima é às ${hhmm(next.start)}` : ''}`}
+        title={`${hello}, ${store.panelPrefs.account.name.split(' ')[0]}`} sub={`${dateLabel[0].toUpperCase()}${dateLabel.slice(1)} · ${today.length ? `${today.length} ${today.length === 1 ? 'sessão' : 'sessões'} hoje` : 'nenhuma sessão hoje'}${next ? ` · a próxima é às ${hhmm(next.start)}` : ''}`}
         actions={<><button className="btn-secondary" onClick={a.newPatient}><Icon name="plus" size={16} /> Novo paciente</button><button className="btn-primary" onClick={() => a.newSession()}><Icon name="calendar" size={16} /> Nova sessão</button></>}
       />
       <div className="kpis">
         <Kpi label="Pacientes ativos" value={active} sub={`${patients.filter((p) => p.status === 'Em pausa').length} em pausa · ${patients.filter((p) => p.status === 'Alta').length} alta este mês`} icon="users" />
         <Kpi label="Sessões nesta semana" value={sessions.length} sub={`${sessions.filter((e) => e.kind === 'in').length} presenciais · ${sessions.filter((e) => e.kind !== 'in').length} online`} icon="calendar" />
-        <Kpi label="Uso do app pelos pacientes" value="78%" sub="registraram algo nos últimos 7 dias" icon="trend" />
+        <Kpi label="Uso do app pelos pacientes" value={`${usage}%`} sub="registraram algo nos últimos 7 dias" icon="trend" />
         <div className="kpi kpi-action">
           <p className="kpi-label"><Icon name="pen" size={16} /> Documentos para assinar</p>
           <p className="kpi-value">{toSign}</p>
@@ -192,7 +199,8 @@ function Dashboard({ store, a }) {
         <section className="panel">
           <div className="panel-head"><h2 className="h3">Hoje</h2><button className="link" onClick={() => a.go('agenda')}>Abrir agenda</button></div>
           <ol className="day-list">
-            <li className="now-line"><span>Agora · 09:41</span></li>
+            <li className="now-line"><span>Agora · {now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></li>
+            {today.length === 0 && <li className="muted sm pad-s">Nenhuma sessão hoje. <button className="link sm" onClick={() => a.newSession()}>Agendar sessão</button></li>}
             {today.map((e) => {
               const p = patients.find((x) => x.id === e.pid);
               const first = e.kind === 'first' || !p?.mood;
@@ -212,7 +220,8 @@ function Dashboard({ store, a }) {
         <section className="panel">
           <div className="panel-head"><div><h2 className="h3">Pedem atenção</h2><p className="muted sm">A partir dos registros do app dos pacientes</p></div></div>
           <ul className="attn">
-            {ATTN.map(([id, msg, src, ic]) => {
+            {attn.length === 0 && <li className="muted sm pad-s">Nada por aqui. Os alertas aparecem conforme os pacientes usam o app.</li>}
+            {attn.map(([id, msg, src, ic]) => {
               const p = patients.find((x) => x.id === id);
               return (
                 <li key={id}>
@@ -254,7 +263,7 @@ function Kpi({ label, value, sub, icon }) {
 const HOURS = Array.from({ length: 12 }, (_, i) => 8 + i);
 const WD = ['SEG', 'TER', 'QUA', 'QUI', 'SEX'];
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-const BASE = new Date(2026, 10, 16); // Monday of the current week
+const BASE = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; })(); // Monday of the current week
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 const hourOf = (d) => Math.round((d.getHours() + d.getMinutes() / 60) * 2) / 2; // snap to the half-hour grid
 
@@ -385,7 +394,7 @@ function Agenda({ store, a }) {
                 {shown.map((d) => (
                   <div key={d} className="cal-day">
                     {HOURS.map((h) => <button key={h} className="cal-slot" aria-label={`Agendar ${WD[d]} às ${h}h`} onClick={() => a.newSession({ day: d, start: h })} />)}
-                    {wk === 0 && d === 0 && <span className="cal-now" style={{ top: `${(9 + 41 / 60 - 8) * 56}px` }} />}
+                    {wk === 0 && d === (new Date().getDay() + 6) % 7 && new Date().getHours() >= 8 && new Date().getHours() < 20 && <span className="cal-now" style={{ top: `${(new Date().getHours() + new Date().getMinutes() / 60 - 8) * 56}px` }} />}
                     {all.filter((e) => e.day === d).map((e) => (
                       <button key={e.id} className={`ev ev-${e.kind} ${e.google ? 'ev-google' : ''}`} style={{ top: (e.start - 8) * 56 + 2, height: e.dur * 56 - 4 }} onClick={() => a.showEvent(e)}>
                         <p className="ev-t">{e.title}</p>
@@ -448,7 +457,8 @@ function Relatorios({ store, a }) {
       <section className="panel">
         <div className="panel-head"><h2 className="h3">Resultados de escalas</h2><button className="link" onClick={() => a.go('copilot')}><Icon name="sparkles" size={14} /> Ver evolução no Copilot</button></div>
         <div className="scales">
-          {SCALES.map(([id, s, max, band, pts]) => {
+          {SCALES.filter(([id]) => patients.some((p) => p.id === id)).length === 0 && <p className="muted sm">Nenhuma escala aplicada ainda.</p>}
+          {SCALES.filter(([id]) => patients.some((p) => p.id === id)).map(([id, s, max, band, pts]) => {
             const p = patients.find((x) => x.id === id);
             const last = pts[pts.length - 1][1];
             return (
@@ -474,7 +484,7 @@ function Relatorios({ store, a }) {
           <span className="ico-tile tile-ai"><Icon name="sparkles" size={20} /></span>
           <div><h2 className="h3">Rascunho de relatório com apoio da IA</h2><p className="muted sm">Monta um rascunho a partir das sessões e dos registros do app. Você revisa e completa antes de assinar.</p></div>
         </div>
-        <button className="btn-primary" onClick={() => setGen({ pid: 'camila', period: 'Novembro/2026' })}>Gerar rascunho</button>
+        <button className="btn-primary" disabled={!patients.length} onClick={() => setGen({ pid: patients[0].id, period: 'Novembro/2026' })}>Gerar rascunho</button>
       </section>
       <section className="panel">
         <div className="panel-head"><h2 className="h3">Relatórios</h2><Segmented small value={f} onChange={setF} options={[['todos', 'Todos', reports.length], ['rasc', 'Em produção', reports.filter(isDraft).length], ['emit', 'Assinados']]} /></div>
@@ -528,7 +538,7 @@ function Documentos({ store, a }) {
 function NotasFiscais({ store }) {
   const { notas, setNotas, patients, panelPrefs } = store;
   const active = patients.filter((p) => p.status.startsWith('Ativ'));
-  const blank = { pid: active[0].id, comp: MONTHS[0], n: '', sessions: 4, value: 4 * panelPrefs.price, file: null };
+  const blank = { pid: active[0]?.id, comp: MONTHS[0], n: '', sessions: 4, value: 4 * panelPrefs.price, file: null };
   const [draft, setDraft] = useState(null);
   const [view, setView] = useState(null); // nota shown in the preview modal
   const [error, setError] = useState('');
@@ -561,7 +571,7 @@ function NotasFiscais({ store }) {
     <>
       <PageHead
         title="Notas fiscais" sub="Emita a nota no sistema da prefeitura ou com seu contador e envie o PDF aqui. O paciente recebe no app e dá ciência."
-        actions={<><button className="btn-secondary" onClick={exportCsv}><Icon name="download" size={16} /> Exportar lista</button><button className="btn-primary" onClick={() => { setDraft(blank); setError(''); }}><Icon name="upload" size={16} /> Enviar nota</button></>}
+        actions={<><button className="btn-secondary" onClick={exportCsv}><Icon name="download" size={16} /> Exportar lista</button><button className="btn-primary" disabled={!active.length} title={active.length ? undefined : 'Cadastre um paciente primeiro'} onClick={() => { setDraft(blank); setError(''); }}><Icon name="upload" size={16} /> Enviar nota</button></>}
       />
       <div className="kpis">
         <div className="kpi"><p className="kpi-label"><Icon name="file" size={16} /> Enviadas de outubro</p><p className="kpi-value">{brl(month.reduce((s, r) => s + r.value, 0))}</p><p className="muted sm">{month.length} notas</p></div>
@@ -648,7 +658,20 @@ const ANSWERS = [
   [/evolu/i, 'Rascunho: Paciente relata semana com queda de humor a partir de 13/11, associada a conversa difícil com o gestor. Manteve respiração guiada diariamente e usou a técnica de madrugada (15/11). Trabalhado: ___. Combinado: ___.'],
 ];
 
-function Copilot() {
+function Copilot({ demo }) {
+  if (!demo) {
+    return (
+      <section className="panel empty-state">
+        <span className="ico-tile tile-ai"><Icon name="sparkles" size={22} /></span>
+        <h1 className="d-title">Copilot de evolução</h1>
+        <p className="muted">Aparece quando seus pacientes tiverem algumas semanas de registros no app e sessões no histórico. Tudo é processado localmente.</p>
+      </section>
+    );
+  }
+  return <CopilotDemo />;
+}
+
+function CopilotDemo() {
   const [q, setQ] = useState('');
   const [chat, setChat] = useState([]);
   const [thinking, setThinking] = useState(false);

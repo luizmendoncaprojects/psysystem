@@ -47,14 +47,18 @@ export default function App({ initialSessions }) {
   // shortcut: clinical data below is still in-memory demo data; next step is moving it to Supabase tables.
   // Plan (perms, cid, habits, meds, waterGoal, rx) lives on each patient and is set by the psychologist.
   // Patient-generated logs (water, emotions, sleep) exist only for the logged-in patient (ME).
-  const [patients, setPatients] = useState(INITIAL_PATIENTS);
-  const [water, setWater] = useState(750);
-  const [emotions, setEmotions] = useState(INITIAL_EMOTION_LOG);
-  const [sleep, setSleep] = useState(INITIAL_SLEEP); // key = day offset (0 hoje, -1 ontem…)
-  const [notas, setNotas] = useState(INITIAL_NOTAS);
-  const [docs, setDocs] = useState(INITIAL_DOCS);
+  // Demo data only when tests inject sessions. A real login starts clean: only what the database has.
+  const demo = Boolean(initialSessions);
+  const [patients, setPatients] = useState(demo ? INITIAL_PATIENTS : []);
+  const [water, setWater] = useState(demo ? 750 : 0);
+  const [emotions, setEmotions] = useState(demo ? INITIAL_EMOTION_LOG : {});
+  const [sleep, setSleep] = useState(demo ? INITIAL_SLEEP : {}); // key = day offset (0 hoje, -1 ontem…)
+  const [notas, setNotas] = useState(demo ? INITIAL_NOTAS : []);
+  const [docs, setDocs] = useState(demo ? INITIAL_DOCS : []);
   const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
-  const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [events, setEvents] = useState(demo ? INITIAL_EVENTS : []);
+  // The logged-in patient's own plan (real mode). shortcut: in memory until the plan tables exist in Supabase.
+  const [myPlan, setMyPlan] = useState({ perms: { ...INITIAL_PANEL_PREFS.defaultPerms }, habits: [], meds: [], rx: [], waterGoal: 2000 });
   const [requests, setRequests] = useState([]); // document requests made by the patient
   const [patientPrefs, setPatientPrefs] = useState(INITIAL_PATIENT_PREFS);
   const [panelPrefs, setPanelPrefs] = useState(INITIAL_PANEL_PREFS);
@@ -72,14 +76,15 @@ export default function App({ initialSessions }) {
   const pPrefs = patientUser ? { ...patientPrefs, account: { ...patientPrefs.account, name: patientUser.name, email: patientUser.email } } : patientPrefs;
   const psPrefs = psiUser ? { ...panelPrefs, account: { ...panelPrefs.account, name: psiUser.name, email: psiUser.email } } : panelPrefs;
 
-  const me = patients.find((p) => p.id === ME);
+  const me = demo ? patients.find((p) => p.id === ME) : myPlan;
+  const myId = demo ? ME : sessions.paciente?.patientId; // patient record this login is linked to
   const store = {
     patients, setPatients, updatePatient, docs, setDocs, templates, setTemplates, events, setEvents, requests, setRequests,
     patientPrefs: pPrefs, setPatientPrefs, panelPrefs: psPrefs, setPanelPrefs, notas, setNotas, water, setWater, emotions, setEmotions, sleep, setSleep,
     perms: me.perms, meds: me.meds, habits: me.habits, waterGoal: me.waterGoal, rx: me.rx,
-    setHabits: (habits) => updatePatient(ME, { habits }),
-    setRx: (rx) => updatePatient(ME, { rx }),
-    sessions, logout, google, setGoogle,
+    setHabits: (habits) => (demo ? updatePatient(ME, { habits }) : setMyPlan((p) => ({ ...p, habits }))),
+    setRx: (rx) => (demo ? updatePatient(ME, { rx }) : setMyPlan((p) => ({ ...p, rx }))),
+    sessions, logout, google, setGoogle, demo, myId,
   };
 
   const loading = <div className="boot" role="status">Carregando…</div>;

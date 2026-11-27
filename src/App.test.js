@@ -37,7 +37,7 @@ test('renders patient app and switches to panel', () => {
   render(<App initialSessions={SESSIONS} />);
   expect(screen.getByText('Olá, Luiz')).toBeInTheDocument();
   toPanel();
-  expect(screen.getByText('Bom dia, Débora')).toBeInTheDocument();
+  expect(screen.getByText(/^(Bom dia|Boa tarde|Boa noite), Débora$/)).toBeInTheDocument();
 });
 
 test('swiping left moves to the next tab, swiping right goes back', () => {
@@ -105,7 +105,7 @@ test('document editor fills placeholders, signs and delivers to the patient app'
   fireEvent.click(screen.getByRole('button', { name: /Novo documento/ }));
   const text = screen.getByLabelText('Texto');
   fireEvent.change(text, { target: { value: 'Declaro que {{paciente}} esteve em atendimento em {{data}}.' } });
-  expect(screen.getAllByText('Declaro que Luiz Mendonça esteve em atendimento em 16/11/2026.').length).toBeGreaterThan(0);
+  expect(screen.getAllByText(`Declaro que Luiz Mendonça esteve em atendimento em ${new Date().toLocaleDateString('pt-BR')}.`).length).toBeGreaterThan(0);
   fireEvent.change(screen.getByLabelText('Título'), { target: { value: 'Declaração de teste' } });
   fireEvent.click(screen.getByRole('button', { name: /Assinar e enviar ao app/ }));
   toApp();
@@ -155,5 +155,21 @@ test('psychologist login shows the API error message', async () => {
   fireEvent.change(screen.getByLabelText('Senha'), { target: { value: 'errada-errada' } });
   fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha incorretos.');
-  await waitFor(() => expect(screen.queryByText('Bom dia, Débora')).not.toBeInTheDocument());
+  await waitFor(() => expect(screen.queryByText(/^(Bom dia|Boa tarde|Boa noite), Débora$/)).not.toBeInTheDocument());
+});
+
+test('real login (no demo data) starts with an empty panel and does not crash', async () => {
+  global.fetch = fakeApi({
+    'GET /api/auth/me': [200, { user: SESSIONS.psicologa }],
+    'GET /api/patients': [200, { patients: [] }],
+    'GET /api/google/status': [200, { configured: false, connected: false }],
+  });
+  window.history.replaceState(null, '', '/painel');
+  render(<App />);
+  expect(await screen.findByText(/Nenhuma sessão hoje/)).toBeInTheDocument();
+  expect(screen.queryByText('Rafael Nunes')).not.toBeInTheDocument();
+  for (const page of [/Agenda/, /Pacientes/, /Relatórios/, /Documentos e notas/, /Copilot/]) {
+    fireEvent.click(screen.getAllByRole('button', { name: page })[0]);
+  }
+  expect(screen.getByText(/Copilot de evolução/)).toBeInTheDocument();
 });
