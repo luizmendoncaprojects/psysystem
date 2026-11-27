@@ -23,7 +23,12 @@ export function unseal(sealed) {
   if (v !== 'v1') throw fail(500, 'Formato do certificado salvo desconhecido.');
   const d = crypto.createDecipheriv('aes-256-gcm', key(), Buffer.from(iv, 'base64'));
   d.setAuthTag(Buffer.from(tag, 'base64'));
-  return Buffer.concat([d.update(Buffer.from(ct, 'base64')), d.final()]).toString('utf8');
+  try {
+    return Buffer.concat([d.update(Buffer.from(ct, 'base64')), d.final()]).toString('utf8');
+  } catch {
+    // Wrong key (CERT_KEY differs from the one that encrypted the data) or tampered data.
+    throw fail(502, 'Não foi possível abrir os dados criptografados: o CERT_KEY deste servidor é diferente do usado para salvá-los. Use o mesmo CERT_KEY em todos os ambientes ou envie o certificado de novo.');
+  }
 }
 
 // Opens the .pfx with the password: proves the password is right and reads the holder and validity.
