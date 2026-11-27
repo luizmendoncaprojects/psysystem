@@ -88,7 +88,7 @@
 /* The app is the viewport: nothing behind it can scroll past the bottom bar. */
 .shell-paciente .phone { position: fixed; inset: 0; margin: 0 auto; height: auto; }
 .shell-paciente .phone-scroll { overscroll-behavior: contain; padding-bottom: 32px; }
-html:has(.shell-paciente), body:has(.shell-paciente) { overflow: hidden; overscroll-behavior: none; height: 100%; }
+html:has(.shell-paciente .phone), body:has(.shell-paciente .phone) { overflow: hidden; overscroll-behavior: none; height: 100%; }
 
 /* Sleep: two time fields side by side, wake-ups stepper on its own row. Fields never overflow the card. */
 .sleep-times { grid-template-columns: 1fr 1fr; }
