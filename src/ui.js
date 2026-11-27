@@ -182,14 +182,18 @@ export function Spark({ d }) {
 // sheet: bottom sheet inside the phone frame (patient app); otherwise a centered dialog.
 export function Modal({ title, sub, onClose, children, footer, wide, sheet }) {
   const ref = useRef(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  // Runs once per open. onClose is usually an inline arrow (new each render): depending on it re-ran this
+  // effect on every keystroke and moved the focus back to the first field.
   useEffect(() => {
     const prev = document.activeElement;
     const first = ref.current?.querySelector('input, select, textarea, button:not(.modal-x)');
     first?.focus();
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
     document.addEventListener('keydown', onKey);
     return () => { document.removeEventListener('keydown', onKey); prev?.focus?.(); };
-  }, [onClose]);
+  }, []);
   return (
     <div className={`modal-backdrop ${sheet ? 'sheet' : ''}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>

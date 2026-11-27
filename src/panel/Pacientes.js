@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Icon, Avatar, Segmented, Toggle, LineChart, MoodFace, Chip, RISK, STATUS, PageHead, Spark, Modal, toast, downloadText, usePaged, Pager } from '../ui';
 import { FEATURES, CIDS, cidLabel, EMOTIONS, HABIT_ICONS, habitSub, fmtL, ME } from '../data';
 import { LinkCard } from './Modals';
+import { stats, summary, dailyMood, lastDays, withLog, dayKey, fmtDay, sleepMin, fmtH } from '../records';
 import { api } from '../api';
 
 const nextKey = (p) => (p.next === '—' ? 'zz' : p.next.startsWith('Hoje') ? `0${p.next}` : p.next.split(' · ').map((s) => s.split('/').reverse().join('')).join(''));
@@ -135,7 +136,7 @@ export function PatientProfile({ p, store, a }) {
           </button>
         ))}
       </div>
-      {tab === 'visao' && (p.id === ME ? <OverviewFull p={p} store={store} /> : <OverviewBasic p={p} />)}
+      {tab === 'visao' && (store.demo ? (p.id === ME ? <OverviewFull p={p} store={store} /> : <OverviewBasic p={p} />) : <OverviewReal p={p} />)}
       {tab === 'plano' && <Plano p={p} up={up} />}
       {tab === 'remedios' && <RemediosReceitas p={p} up={up} />}
       {tab === 'permissoes' && <Permissoes p={p} up={up} />}
@@ -254,8 +255,97 @@ function OverviewFull({ p, store }) {
   );
 }
 
-const sleepMin = (n) => { const t = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; }; return (t(n.wake) - t(n.bed) + 1440) % 1440; };
-const fmtH = (min) => `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`;
+// Real patients: everything below is computed from what the patient logged in the app (src/records.js).
+const METRICS = [['humor', 'Humor'], ['habitos', 'Hábitos'], ['remedios', 'Remédios']];
+function OverviewReal({ p }) {
+  const [metric, setMetric] = useState('humor');
+  const rec = p.record ?? {};
+  const log = p.log ?? withLog(rec);
+  const days = lastDays(30);
+  const series = {
+    humor: { points: dailyMood(log, days), min: 1, max: 6, label: 'Humor médio do dia (1 a 6)' },
+    habitos: { points: days.map((d) => (log.habits[d] ?? []).length), min: 0, max: Math.max(1, p.habits.length), label: `Hábitos cumpridos no dia (de ${p.habits.length})` },
+    remedios: { points: days.map((d) => Object.keys(log.meds[d] ?? {}).length), min: 0, max: Math.max(1, p.meds.length), label: `Doses marcadas no dia (de ${p.meds.length})` },
+  }[metric];
+  // Days without data are drawn at the previous value so the line stays readable; empty series show a hint.
+  const filled = series.points.reduce((acc, v) => [...acc, v ?? acc[acc.length - 1] ?? null], []).map((v) => v ?? series.min);
+  const hasData = series.points.some((v) => v != null && (metric === 'humor' || v > 0));
+  const s = stats(rec, { days: 14 });
+  const lines = summary(rec);
+  const nights = lastDays(7).reverse().map((d) => [d, log.sleep[d]]).filter(([, n]) => n);
+  const shared = (p.diary ?? []).filter((e) => e.shared).slice(0, 5);
+  return (
+    <div className="grid-2-1">
+      <div className="stack">
+        <section className="panel ai-panel">
+          <div className="panel-head">
+            <div><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Resumo pré-sessão</h2><p className="muted sm">Últimos 7 dias comparados aos 7 anteriores · calculado dos registros do app</p></div>
+          </div>
+          <ul className="ai-list">{lines.map((l) => <li key={l}>{l}</li>)}</ul>
+          <div className="ai-foot">
+            <p className="xs muted row gap6"><Icon name="alert" size={14} /> Contas automáticas sobre os registros. Não definem diagnóstico nem risco.</p>
+            <button className="btn-secondary sm-btn" onClick={() => copyText(lines.map((l) => `- ${l}`).join('\n'), 'Resumo copiado para colar na evolução')}><Icon name="copy" size={14} /> Copiar para a evolução</button>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <div><h2 className="h3">Acompanhamento pelo app</h2><p className="muted sm">Últimos 30 dias</p></div>
+            <Segmented small value={metric} onChange={setMetric} options={METRICS} />
+          </div>
+          <p className="xs muted">{series.label}</p>
+          {hasData
+            ? <LineChart key={metric} points={filled} min={series.min} max={series.max} height={170} labels={[fmtDay(days[0]), fmtDay(days[10]), fmtDay(days[20]), 'Hoje']} />
+            : <p className="muted pad center">Sem registros neste período.</p>}
+          <div className="mini-stats four">
+            <div><p className="muted sm">Hábitos cumpridos · 14 dias</p><p className="kpi-value sm-kpi">{s.habitPct == null ? '—' : `${s.habitPct}%`}</p></div>
+            <div><p className="muted sm">Adesão aos remédios</p><p className="kpi-value sm-kpi">{s.medPct == null ? '—' : `${s.medPct}%`}</p><p className="xs muted">só você vê</p></div>
+            <div><p className="muted sm">Água · média diária</p><p className="kpi-value sm-kpi">{s.waterAvg == null ? '—' : fmtL(s.waterAvg)}</p><p className="xs muted">meta {fmtL(p.waterGoal)}</p></div>
+            <div><p className="muted sm">Sono médio</p><p className="kpi-value sm-kpi">{fmtH(s.sleepAvg)}</p></div>
+          </div>
+        </section>
+
+        {Object.keys(s.emotions).length > 0 ? <Emocoes counts={s.emotions} /> : <section className="panel"><h2 className="h3">Emoções registradas · 14 dias</h2><p className="muted sm mt8">Nenhuma emoção registrada ainda.</p></section>}
+      </div>
+
+      <div className="stack">
+        <section className="panel">
+          <h2 className="h3">Pauta trazida pelo paciente</h2>
+          <ul className="pauta">
+            {(p.topics ?? []).map((t) => <li key={t.t} className={t.prio ? 'prio' : ''}><Icon name="flag" size={14} /><div><p className="row-title">{t.t}</p>{t.prio && <p className="xs prio-txt">Marcado como prioridade</p>}</div></li>)}
+            {!(p.topics ?? []).length && <li className="muted sm">Nenhum assunto anotado.</li>}
+          </ul>
+        </section>
+        <section className="panel">
+          <h2 className="h3">Sono · últimas noites</h2>
+          <ul className="sleep-list">
+            {nights.map(([d, n]) => (
+              <li key={d}>
+                <span className="sm grow">{d === dayKey() ? 'Hoje' : fmtDay(d)}</span>
+                <span className="sm muted">{n.bed}–{n.wake}</span>
+                <span className="sleep-bar"><span style={{ width: `${Math.min(100, (sleepMin(n) / 540) * 100)}%` }} /></span>
+                <b className="sm">{fmtH(sleepMin(n))}</b>
+                <span className="xs muted">{n.wakeups ? `${n.wakeups} desp.` : '—'}</span>
+              </li>
+            ))}
+            {!nights.length && <li className="muted sm">Sem registros de sono nesta semana.</li>}
+          </ul>
+        </section>
+        <section className="panel">
+          <h2 className="h3">Diário compartilhado</h2>
+          {shared.map((e) => (
+            <article key={e.id} className="mini-entry">
+              <p className="xs muted row gap6"><MoodFace v={e.mood} size={16} /> {e.d}</p>
+              <p className="row-title">{e.t}</p>
+              <p className="sm">{e.b}</p>
+            </article>
+          ))}
+          {!shared.length && <p className="muted sm mt8">Nada compartilhado ainda. Só aparecem os registros que o paciente escolher compartilhar.</p>}
+        </section>
+      </div>
+    </div>
+  );
+}
 
 function Emocoes({ counts }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
@@ -439,8 +529,8 @@ function RemediosReceitas({ p, up }) {
                 <p className="xs muted">{r.file} · {r.date}</p>
               </div>
               <Chip kind={r.status === 'Nova' ? 'accent' : 'quiet'}>{r.status === 'Nova' ? 'Nova' : 'Aceita'}</Chip>
-              {r.url
-                ? <a className="btn-ghost-sm" href={r.url} target="_blank" rel="noreferrer"><Icon name="eye" size={14} /> Ver</a>
+              {(r.url || r.data)
+                ? <a className="btn-ghost-sm" href={r.url || r.data} download={r.data ? r.file : undefined} target="_blank" rel="noreferrer"><Icon name={r.data ? "download" : "eye"} size={14} /> {r.data ? "Baixar" : "Ver"}</a>
                 : <button className="btn-ghost-sm" onClick={() => setShowRx(r)}><Icon name="eye" size={14} /> Ver</button>}
               {r.status === 'Nova' && <button className="btn-primary sm-btn" onClick={() => setDraft({ ...blank, rxId: r.id })}><Icon name="check" size={14} /> Aceitar</button>}
             </li>

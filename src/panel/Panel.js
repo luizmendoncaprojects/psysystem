@@ -6,6 +6,7 @@ import PanelSettings from './Settings';
 import { DocEditor, DocumentosOficiais, fromServerDoc } from './Docs';
 import { NewPatientModal, SessionModal, EventModal, RunSessionModal, fromServer } from './Modals';
 import { api } from '../api';
+import { alerts, summary, evolution, answer, num, fmtH } from '../records';
 
 const CRUMB = { painel: 'Clínica / Painel', agenda: 'Clínica / Agenda', pacientes: 'Clínica / Pacientes', relatorios: 'Clínica / Relatórios e resultados', documentos: 'Clínica / Documentos e notas fiscais', copilot: 'Inteligência / Copilot', config: 'Conta / Perfil e configurações' };
 const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${h % 1 ? '30' : '00'}`;
@@ -23,7 +24,7 @@ export default function Panel({ store }) {
   // Real patients (created through the API) join the demo list; their link status comes from the server.
   const { setPatients } = store;
   const defaultPerms = prefs.defaultPerms;
-  const { setDocs, setRequests, demo } = store;
+  const { setDocs, setRequests, demo, reloadRecords } = store;
   const loadPatients = useCallback(() => {
     api.patients.list().then(({ patients: rows }) => {
       setPatients((ps) => {
@@ -33,10 +34,11 @@ export default function Panel({ store }) {
       });
       if (demo) return;
       // Signed documents and patient requests live in the database: replace the server ones, keep local drafts.
-      api.documents.list().then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d, rows)), ...all.filter((x) => !x.server)]), () => {});
+      api.documents.list('psicologa').then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d, rows)), ...all.filter((x) => !x.server)]), () => {});
       api.requests.list().then(({ requests }) => setRequests(requests), () => {});
+      reloadRecords(); // plans and what the patients logged
     }, () => {}); // offline or demo: keep the local list
-  }, [setPatients, setDocs, setRequests, defaultPerms, demo]);
+  }, [setPatients, setDocs, setRequests, defaultPerms, demo, reloadRecords]);
   useEffect(loadPatients, [loadPatients]);
   useEvery(60_000, loadPatients); // picks up linked patients, new documents and requests
   const closeModal = () => setModal(null);
@@ -89,7 +91,7 @@ export default function Panel({ store }) {
           {page === 'pacientes' && (patient ? <PatientProfile key={pid} p={patient} store={store} a={actions} /> : <PatientList patients={patients} open={open} onNew={actions.newPatient} />)}
           {page === 'relatorios' && <Relatorios store={store} a={actions} />}
           {page === 'documentos' && <Documentos store={store} a={actions} />}
-          {page === 'copilot' && <Copilot demo={store.demo} />}
+          {page === 'copilot' && <Copilot store={store} />}
           {page === 'config' && <PanelSettings store={store} prefs={prefs} setPrefs={setPanelPrefs} onLogout={() => store.logout('psicologa')} />}
         </main>
       </div>
@@ -185,7 +187,11 @@ function Dashboard({ store, a }) {
   const next = today.find((e) => e.start > nowH);
   const hello = now.getHours() < 12 ? 'Bom dia' : now.getHours() < 18 ? 'Boa tarde' : 'Boa noite';
   const dateLabel = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).replace('-feira', '');
-  const attn = ATTN.filter(([id]) => patients.some((p) => p.id === id));
+  // Demo: fixed examples. Real: rules over each patient's logs (src/records.js alerts).
+  const attn = store.demo
+    ? ATTN.filter(([id]) => patients.some((p) => p.id === id))
+    : patients.flatMap((p) => alerts(p).slice(0, 2).map(([msg, src, ic]) => [p.id, msg, src, ic])).slice(0, 8);
+  const asked = (store.requests ?? []).length;
   const usage = patients.length ? Math.round(patients.filter((p) => p.use > 0).length / patients.length * 100) : 0;
   return (
     <>
@@ -198,9 +204,9 @@ function Dashboard({ store, a }) {
         <Kpi label="Sessões nesta semana" value={sessions.length} sub={`${sessions.filter((e) => e.kind === 'in').length} presenciais · ${sessions.filter((e) => e.kind !== 'in').length} online`} icon="calendar" />
         <Kpi label="Uso do app pelos pacientes" value={`${usage}%`} sub="registraram algo nos últimos 7 dias" icon="trend" />
         <div className="kpi kpi-action">
-          <p className="kpi-label"><Icon name="pen" size={16} /> Documentos para assinar</p>
-          <p className="kpi-value">{toSign}</p>
-          <button className="btn-light-sm" onClick={() => a.go('documentos')}>{toSign ? 'Assinar agora' : 'Ver documentos'} <Icon name="chevR" size={14} /></button>
+          <p className="kpi-label"><Icon name="pen" size={16} /> Documentos solicitados</p>
+          <p className="kpi-value">{asked}</p>
+          <button className="btn-light-sm" onClick={() => a.go('documentos')}>{asked ? 'Ver pedidos' : toSign ? `${toSign} para assinar` : 'Ver documentos'} <Icon name="chevR" size={14} /></button>
         </div>
       </div>
 
@@ -233,7 +239,7 @@ function Dashboard({ store, a }) {
             {attn.map(([id, msg, src, ic]) => {
               const p = patients.find((x) => x.id === id);
               return (
-                <li key={id}>
+                <li key={`${id}${msg}`}>
                   <button className="attn-row" onClick={() => a.open(id)}>
                     <Avatar name={p.name} size={32} />
                     <div className="grow"><p className="row-title">{p.name}</p><p className="sm">{msg}</p><p className="xs muted row gap4"><Icon name={ic} size={12} /> {src}</p></div>
@@ -243,7 +249,7 @@ function Dashboard({ store, a }) {
               );
             })}
           </ul>
-          <p className="note"><Icon name="shield" size={14} /> O nível de risco nunca é inferido pela IA: ele é sempre definido por você.</p>
+          <p className="note"><Icon name="shield" size={14} /> Alertas são regras simples sobre os registros. O nível de risco é sempre definido por você.</p>
         </section>
       </div>
 
@@ -455,7 +461,8 @@ function Relatorios({ store, a }) {
   const pg = usePaged(rows, 8);
   const generate = () => {
     const p = patients.find((x) => x.id === gen.pid);
-    const body = `IDENTIFICAÇÃO\nAutora: ${panelPrefs.account.name}, ${panelPrefs.account.crp}.\nInteressado: ${p.name}.\nAssunto: evolução ${gen.period.toLowerCase()}.\n\nPROCEDIMENTO\nAtendimentos ${p.mode === 'Online' ? 'online' : 'presenciais'} semanais de 50 minutos, com registros diários pelo app KiWave (uso de ${p.use}% no período).\n\nANÁLISE\n${p.mood ? `Humor médio no app de ${(p.mood.reduce((s, v) => s + v, 0) / p.mood.length).toFixed(1).replace('.', ',')} em 14 dias.` : 'Sem registros suficientes no app.'} ___\n\nCONCLUSÃO\n___`;
+    const analysis = p.record ? summary(p.record).join('\n') : p.mood ? `Humor médio no app de ${(p.mood.reduce((t, v) => t + v, 0) / p.mood.length).toFixed(1).replace('.', ',')} em 14 dias.` : 'Sem registros suficientes no app.';
+    const body = `IDENTIFICAÇÃO\nAutora: ${panelPrefs.account.name}, ${panelPrefs.account.crp}.\nInteressado: ${p.name}.\nAssunto: evolução ${gen.period.toLowerCase()}.\n\nPROCEDIMENTO\nAtendimentos ${p.mode === 'Online' ? 'online' : 'presenciais'} semanais de ${panelPrefs.sessionMin} minutos, com registros pelo app KiWave (uso em ${p.use}% dos últimos 14 dias).\n\nANÁLISE\nDados do app (contas automáticas, revise):\n${analysis}\n___\n\nCONCLUSÃO\n___`;
     const doc = { id: Date.now(), tpl: 'relatorio', pid: p.id, name: p.name, date: TODAY_STR, title: `Evolução · ${gen.period}`, body, status: 'Rascunho da IA', delivery: '—', code: null };
     setDocs([doc, ...docs]);
     setGen(null);
@@ -668,17 +675,88 @@ const ANSWERS = [
   [/evolu/i, 'Rascunho: Paciente relata semana com queda de humor a partir de 13/11, associada a conversa difícil com o gestor. Manteve respiração guiada diariamente e usou a técnica de madrugada (15/11). Trabalhado: ___. Combinado: ___.'],
 ];
 
-function Copilot({ demo }) {
-  if (!demo) {
+function Copilot({ store }) {
+  return store.demo ? <CopilotDemo /> : <CopilotReal patients={store.patients.filter((p) => p.record)} />;
+}
+
+// Real patients: evolution computed from the app logs (first period vs the latest), plus keyword answers.
+function CopilotReal({ patients }) {
+  const [pid, setPid] = useState(patients[0]?.id);
+  const [q, setQ] = useState('');
+  const [chat, setChat] = useState([]);
+  const p = patients.find((x) => x.id === pid) ?? patients[0];
+  if (!p) {
     return (
       <section className="panel empty-state">
         <span className="ico-tile tile-ai"><Icon name="sparkles" size={22} /></span>
         <h1 className="d-title">Copilot de evolução</h1>
-        <p className="muted">Aparece quando seus pacientes tiverem algumas semanas de registros no app e sessões no histórico. Tudo é processado localmente.</p>
+        <p className="muted">Aparece quando algum paciente vinculado começar a registrar no app.</p>
       </section>
     );
   }
-  return <CopilotDemo />;
+  const ev = evolution(p.record);
+  const ask = (e) => {
+    e.preventDefault();
+    const text = q.trim();
+    if (!text) return;
+    setChat((c) => [...c, { who: 'me', text }, { who: 'ai', text: answer(text, p.record) }]);
+    setQ('');
+  };
+  const mm = (k) => { const [y, m] = k.split('-'); return `${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+m - 1]}/${y.slice(2)}`; };
+  return (
+    <>
+      <div className="copilot-hero">
+        <div className="row-between wrap gap12">
+          <div className="row gap10"><Avatar name={p.name} size={36} tone={2} /><div><p className="row-title">{p.name}</p><p className="xs on-dark-muted">{ev.spanDays ? `${ev.spanDays} dias de registros` : 'Sem registros de humor ainda'}</p></div></div>
+          <select className="select" value={p.id} onChange={(e) => { setPid(e.target.value); setChat([]); }} aria-label="Paciente">{patients.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
+        </div>
+        <h1 className="hero-title mt16">Evolução pelos registros do app</h1>
+        <p className="on-dark-muted">Primeiros {ev.win} dias comparados aos últimos {ev.win} · contas automáticas, sem modelo de IA</p>
+        <div className="hero-kpis">
+          {[['Humor médio', ev.first.moodAvg, ev.last.moodAvg, (v) => num(v)], ['Hábitos cumpridos', ev.first.habitPct, ev.last.habitPct, (v) => `${v}%`], ['Sono médio', ev.first.sleepAvg, ev.last.sleepAvg, fmtH], ['Emoções difíceis', ev.first.hard, ev.last.hard, String]].map(([l, a, b, f]) => (
+            <div key={l}><p className="xs on-dark-muted">{l}</p><p className="hero-v">{a == null ? '—' : f(a)} → {b == null ? '—' : f(b)}</p></div>
+          ))}
+        </div>
+      </div>
+      <div className="grid-2-1">
+        <section className="panel">
+          <div className="panel-head"><div><h2 className="h3">Humor médio por mês</h2><p className="muted sm">Escala de 1 a 6 registrada no app</p></div></div>
+          {ev.monthly.length >= 2
+            ? <LineChart points={ev.monthly.map(([, v]) => v)} height={180} labels={ev.monthly.map(([k]) => mm(k))} />
+            : <p className="muted pad center">O gráfico aparece com pelo menos 2 meses de registros.</p>}
+        </section>
+        <div className="stack">
+          <section className="panel">
+            <h2 className="h3 row gap6 ok-txt"><Icon name="trend" size={18} /> Sinais de melhoria</h2>
+            <ul className="bullets ok">{ev.better.map((t) => <li key={t}>{t}</li>)}{!ev.better.length && <li className="muted">Nada a destacar ainda.</li>}</ul>
+          </section>
+          <section className="panel">
+            <h2 className="h3 row gap6 warn-txt"><Icon name="alert" size={18} /> Pontos de atenção</h2>
+            <ul className="bullets warn">{ev.worse.map((t) => <li key={t}>{t}</li>)}{!ev.worse.length && <li className="muted">Nada a destacar ainda.</li>}</ul>
+          </section>
+        </div>
+      </div>
+      <section className="panel ai-panel">
+        <div className="panel-head"><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Sugestões para a próxima sessão</h2><span className="xs muted">A partir da pauta e dos registros · a decisão é sempre sua</span></div>
+        <ol className="suggest">{ev.suggestions.map((t) => <li key={t}>{t}</li>)}{!ev.suggestions.length && <li className="muted">Sem sugestões: poucos registros ainda.</li>}</ol>
+      </section>
+      {chat.length > 0 && (
+        <section className="panel chat" aria-live="polite">
+          {chat.map((m, i) => <div key={i} className={`msg ${m.who}`}>{m.who === 'ai' && <Icon name="sparkles" size={14} />}<p>{m.text}</p></div>)}
+        </section>
+      )}
+      <form className="ask" onSubmit={ask}>
+        <div className="ask-box">
+          <Icon name="sparkles" size={18} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Pergunte sobre ${p.name.split(' ')[0]}: humor, sono, hábitos, remédios…`} aria-label="Pergunte ao Copilot" />
+          <button className="btn-icon" aria-label="Enviar" disabled={!q.trim()}><Icon name="send" size={16} /></button>
+        </div>
+        <div className="row gap8 wrap">
+          {['Resuma a semana', 'Como está o sono?', 'E os hábitos?', 'Quais emoções aparecem?'].map((x) => <button type="button" key={x} className="chip-sel" onClick={() => setQ(x)}>{x}</button>)}
+        </div>
+      </form>
+    </>
+  );
 }
 
 function CopilotDemo() {

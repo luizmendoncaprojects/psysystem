@@ -47,6 +47,8 @@ const session = (req, role) => {
   const s = verifyToken(cookies(req)[cookieName(role)], SECRET);
   return s && s.role === role ? s : null;
 };
+// Routes both sides use: ?role= says which login to use (both can be open in one browser).
+const roleSession = (req, url) => { const r = url.searchParams.get('role'); return ROLES.includes(r) ? session(req, r) : session(req, 'psicologa') ?? session(req, 'paciente'); };
 const requireRole = (req, res, role) => {
   const s = session(req, role);
   if (!s) fail(res, 401, 'Faça login para continuar.');
@@ -71,7 +73,9 @@ const patientView = (p) => ({
   code: p.user_id ? null : p.link_code, codeExpiresAt: p.user_id ? null : p.code_expires_at,
   link: p.user_id || !p.link_code ? null : linkUrl(p.link_code),
 });
-const DOC_COLS = 'id,patient_id,title,body,code,signed_by,signed_at'; // everything but the PDF bytes
+// Each record key has a single writer, so the two sides never overwrite each other.
+const RECORD_KEYS = { psicologa: ['plan', 'clinical', 'rxStatus'], paciente: ['log', 'diary', 'topics', 'rx'] };
+const DOC_COLS ='id,patient_id,title,body,code,signed_by,signed_at'; // everything but the PDF bytes
 // title, body, signer and PDF are stored encrypted (AES-256-GCM, CERT_KEY): the database only holds ciphertext.
 const docView = (d) => ({ id: d.id, patientId: d.patient_id, title: cert.unseal(d.title), body: cert.unseal(d.body), code: d.code, signedBy: d.signed_by && cert.unseal(d.signed_by), signedAt: d.signed_at });
 // Retries on the rare unique-code collision (PostgREST answers 409).
@@ -244,8 +248,8 @@ const routes = {
   },
 
   // Signed documents: the psychologist sees all of hers; a patient sees only their own.
-  'GET /api/documents': async (req, res) => {
-    const s = session(req, 'psicologa') ?? session(req, 'paciente');
+  'GET /api/documents': async (req, res, url) => {
+    const s = roleSession(req, url);
     if (!s) return fail(res, 401, 'Faça login para continuar.');
     const who = s.role === 'psicologa' ? `psychologist_id=eq.${s.uid}` : `patient_id=eq.${s.patientId}`;
     if (s.role === 'paciente' && !UUID.test(String(s.patientId))) return send(res, 200, { documents: [] });
@@ -265,6 +269,64 @@ const routes = {
     const file = `${cert.unseal(d.title)} - ${d.code}.pdf`.replace(/[^\w\s.()À-ÿ-]/g, '');
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${file.replace(/[^\x20-\x7E]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(file)}`, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     res.end(Buffer.from(cert.unseal(d.pdf), 'base64'));
+  },
+
+  /* ----- patient record (plan set by the psychologist, logs written by the patient) ----- */
+  // psychologist: { records: { [patientId]: { key: data } } } for all her patients (diary: shared entries only).
+  // patient: { record: { key: data } } for themself (no clinical notes).
+  'GET /api/records': async (req, res, url) => {
+    const s = roleSession(req, url);
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    let rows;
+    if (s.role === 'psicologa') {
+      const mine = await db.list('patients', `psychologist_id=eq.${s.uid}&select=id`);
+      if (!mine.length) return send(res, 200, { records: {} });
+      rows = await db.list('patient_records', `patient_id=in.(${mine.map((p) => p.id).join(',')})`);
+    } else {
+      if (!UUID.test(String(s.patientId))) return send(res, 200, { record: {} });
+      rows = await db.list('patient_records', `patient_id=eq.${s.patientId}&key=neq.clinical`);
+    }
+    const out = {};
+    for (const r of rows) {
+      let data = JSON.parse(cert.unseal(r.data));
+      if (r.key === 'diary' && s.role === 'psicologa') data = data.filter((e) => e.shared); // private entries never leave for the panel
+      (out[r.patient_id] ??= {})[r.key] = data;
+    }
+    send(res, 200, s.role === 'psicologa' ? { records: out } : { record: out[s.patientId] ?? {} });
+  },
+
+  'POST /api/records': async (req, res, url) => {
+    const s = roleSession(req, url);
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    const { patientId, key, data } = await body(req, 3_000_000); // rx carries photos/PDFs
+    if (!RECORD_KEYS[s.role].includes(key)) return fail(res, 403, 'Você não pode alterar este dado.');
+    if (data === undefined || typeof data !== 'object') return fail(res, 400, 'Dados inválidos.');
+    let pid = s.patientId;
+    if (s.role === 'psicologa') {
+      if (!UUID.test(String(patientId))) return fail(res, 400, 'Paciente inválido.');
+      const [p] = await db.list('patients', `id=eq.${patientId}&psychologist_id=eq.${s.uid}&select=id&limit=1`);
+      if (!p) return fail(res, 404, 'Paciente não encontrado.');
+      pid = p.id;
+    } else if (!UUID.test(String(pid))) return fail(res, 409, 'Vincule sua conta a uma psicóloga primeiro.');
+    await db.upsert('patient_records', { patient_id: pid, key, data: cert.seal(JSON.stringify(data)), updated_at: new Date().toISOString() });
+    send(res, 200, { ok: true });
+  },
+
+  /* ----- preferences (theme, accent…) per account ----- */
+  'GET /api/prefs': async (req, res, url) => {
+    const s = session(req, url.searchParams.get('role') === 'paciente' ? 'paciente' : 'psicologa');
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    const r = await db.one('user_prefs', 'user_id', s.uid);
+    send(res, 200, { prefs: r ? JSON.parse(cert.unseal(r.data)) : null });
+  },
+
+  'POST /api/prefs': async (req, res, url) => {
+    const s = session(req, url.searchParams.get('role') === 'paciente' ? 'paciente' : 'psicologa');
+    if (!s) return fail(res, 401, 'Faça login para continuar.');
+    const { prefs } = await body(req, 50_000);
+    if (!prefs || typeof prefs !== 'object') return fail(res, 400, 'Preferências inválidas.');
+    await db.upsert('user_prefs', { user_id: s.uid, data: cert.seal(JSON.stringify(prefs)), updated_at: new Date().toISOString() });
+    send(res, 200, { ok: true });
   },
 
   /* ----- document requests ----- */

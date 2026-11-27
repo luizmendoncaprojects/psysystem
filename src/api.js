@@ -32,9 +32,17 @@ export const api = {
     create: () => req('/patients', { method: 'POST', body: {} }),
     newCode: (id) => req('/patients/code', { method: 'POST', body: { id } }),
   },
+  records: {
+    list: (role) => req(`/records?role=${role}`),
+    save: (role, key, data, patientId) => req(`/records?role=${role}`, { method: 'POST', body: { key, data, patientId } }),
+  },
+  prefs: {
+    get: (role) => req(`/prefs?role=${role}`),
+    save: (role, prefs) => req(`/prefs?role=${role}`, { method: 'POST', body: { prefs } }),
+  },
   documents: {
     sign: (doc) => req('/documents/sign', { method: 'POST', body: doc }),
-    list: () => req('/documents'),
+    list: (role) => req(`/documents?role=${role}`),
     pdfUrl: (id, role) => `/api/documents/pdf?id=${encodeURIComponent(id)}&role=${role}`,
   },
   requests: {

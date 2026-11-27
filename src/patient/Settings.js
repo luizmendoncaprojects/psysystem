@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { Icon, Avatar, Segmented, Toggle, MoodFace, Modal, toast } from '../ui';
 import { ACCENTS } from '../data';
 
+const CUPS = [150, 200, 250, 300, 400, 500];
+
 export default function Settings({ prefs, setPrefs, onBack, onLogout }) {
   const set = (patch) => setPrefs((cur) => ({ ...cur, ...patch })); // functional: rapid changes must not overwrite each other
   const [editing, setEditing] = useState(false);
@@ -40,6 +42,15 @@ export default function Settings({ prefs, setPrefs, onBack, onLogout }) {
             <div><dt>Em acompanhamento desde</dt><dd>março de 2025</dd></div>
           </dl>
         )}
+      </section>
+
+      <p className="section-label">Registros</p>
+      <section className="card set-list">
+        <div className="set-row col">
+          <span className="row gap8"><Icon name="drop" size={18} /> Tamanho do seu copo</span>
+          <Segmented small options={CUPS.map((ml) => [ml, `${ml} ml`])} value={prefs.cupMl ?? 250} onChange={(v) => set({ cupMl: v })} />
+          <p className="xs muted">Cada toque em “Copo” soma esta quantidade de água.</p>
+        </div>
       </section>
 
       <p className="section-label">Aparência</p>

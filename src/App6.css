@@ -153,3 +153,6 @@ html:has(.shell-paciente .phone), body:has(.shell-paciente .phone) { overflow: h
 .pass-row { display: flex; gap: 6px; align-items: center; }
 .pass-row input { flex: 1; min-width: 0; }
 .cert-pass { font-size: 14px; letter-spacing: .04em; }
+
+/* patient table: names stay on one line */
+.table td:first-child .row-title { white-space: nowrap; }

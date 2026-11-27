@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { Icon, MoodPicker, MoodFace, Avatar, Segmented, Toggle, MOODS, Modal, toast, downloadText, useEvery } from '../ui';
+import { Icon, MoodPicker, MoodFace, Avatar, Segmented, Toggle, MOODS, Modal, toast, downloadText, useEvery, LineChart } from '../ui';
 import { DocPaper, downloadDoc, fromServerDoc } from '../panel/Docs';
 import { api } from '../api';
+import { dayKey, offsetKey, emptyLog, lastDays, dailyMood, stats, num, fmtH, fmtDay, sleepMin } from '../records';
 import { EMOTIONS, fmtL, habitSub, brl, ME } from '../data';
 import Settings from './Settings';
+
+const nowHHMM = () => new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 // [key, label, icon, visible(perms)]. The bottom bar puts the FAB in the middle of these four.
 const TABS = [
@@ -14,32 +17,32 @@ const TABS = [
 ];
 // FAB menu: [label, icon, tab, sub, visible(perms)]
 const FAB_ITEMS = [
+  ['Meus registros', 'chart', 'registros', null, () => true],
   ['Documentos', 'file', 'docs', null, () => true],
   ['Remédios', 'pill', 'rotina', 'remedios', (p) => p.remedios || p.receitas],
   ['Assuntos da sessão', 'flag', 'diario', 'pauta', (p) => p.pauta],
   ['Configurações', 'gear', 'config', null, () => true],
 ];
-const EXTRA = ['docs', 'config']; // screens reached from the FAB, not from a tab
+const EXTRA = ['registros', 'docs', 'config']; // screens reached from the FAB, not from a tab
 
 export default function Patient({ store }) {
   const { perms, patientPrefs: prefs, setPatientPrefs } = store;
   const [tab, setTab] = useState('hoje');
   const [dir, setDir] = useState(0); // -1 came from the right, 1 from the left: drives the slide-in
-  const [mood, setMood] = useState(null);
-  const [taken, setTaken] = useState({ 1: '08:12' }); // medId → time taken
   const [diarioSub, setDiarioSub] = useState('diario');
   const [rotinaSub, setRotinaSub] = useState('habitos');
   const [fab, setFab] = useState(false);
-  const [dayEmotion, setDayEmotion] = useState(null);
   const [, setTick] = useState(0);
-  // Each minute: re-render (dates stay current) and, with a real login, fetch the signed documents.
+  // Each minute: re-render (dates stay current) and, with a real login, fetch documents and the plan
+  // (habits, medicines, permissions the psychologist may have changed).
   const { demo, setDocs } = store;
   const loadDocs = () => {
     if (demo) return;
-    api.documents.list().then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d)), ...all.filter((x) => !x.server)]), () => {});
+    api.documents.list('paciente').then(({ documents }) => setDocs((all) => [...documents.map((d) => fromServerDoc(d)), ...all.filter((x) => !x.server)]), () => {});
   };
   useEffect(loadDocs, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEvery(60_000, () => { setTick((t) => t + 1); loadDocs(); });
+  // shortcut: a reload landing inside the 600 ms save debounce can briefly show the previous value; fine at 1/min.
+  useEvery(60_000, () => { setTick((t) => t + 1); loadDocs(); store.reloadMine(); });
   const touch = useRef(null);
   const tabs = TABS.filter((t) => t[3](perms));
   const cur = EXTRA.includes(tab) || tabs.some((t) => t[0] === tab) ? tab : 'hoje'; // tab may be turned off by the psychologist
@@ -52,7 +55,7 @@ export default function Patient({ store }) {
     if (sub && t === 'rotina') setRotinaSub(sub);
     document.querySelector('.phone-scroll')?.scrollTo(0, 0);
   };
-  const ctx = { ...store, mood, setMood, taken, setTaken, go, dayEmotion, setDayEmotion };
+  const ctx = { ...store, go };
   const half = Math.ceil(tabs.length / 2);
   const tabBtn = ([k, l, i]) => (
     <button key={k} className={cur === k ? 'on' : ''} aria-current={cur === k ? 'page' : undefined} onClick={() => go(k)}>
@@ -85,8 +88,9 @@ export default function Patient({ store }) {
           {cur === 'hoje' && <Hoje {...ctx} />}
           {cur === 'humor' && <Humor {...ctx} />}
           {cur === 'rotina' && <Rotina {...ctx} sub={rotinaSub} setSub={setRotinaSub} />}
-          {cur === 'diario' && <DiarioTab demo={store.demo} perms={perms} sub={diarioSub} setSub={setDiarioSub} />}
+          {cur === 'diario' && <DiarioTab store={store} perms={perms} sub={diarioSub} setSub={setDiarioSub} />}
           {cur === 'docs' && <Documentos store={store} />}
+          {cur === 'registros' && <MeusRegistros store={store} />}
           {cur === 'config' && <Settings prefs={prefs} setPrefs={setPatientPrefs} onBack={() => go('hoje')} onLogout={() => store.logout('paciente')} />}
         </div>
       </main>
@@ -146,12 +150,8 @@ const dayLabel = (off) => {
 };
 const PAST_WATER = [1500, 2000, 1250, 1750, 1000, 2000]; // index = -off - 1
 
-function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits, dayEmotion, setDayEmotion, setEmotions }) {
-  // One emotion per day; switching moves the count from the old one to the new one.
-  const pickEmotion = (f) => {
-    setEmotions((e) => ({ ...e, ...(dayEmotion && { [dayEmotion]: Math.max(0, (e[dayEmotion] || 0) - 1) }), [f]: (e[f] || 0) + 1 }));
-    setDayEmotion(f);
-  };
+function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTaken, water, setWater, waterGoal, sleep, setSleep, habits, setHabits, dayEmotion, setDayEmotion, log }) {
+  const pickEmotion = (f) => { setDayEmotion(f); toast('Emoção do dia registrada'); }; // locked once picked
   const [off, setOff] = useState(0); // 0 = hoje, -1 = ontem… past days are read-only except sleep
   const past = off < 0;
   const day = 6 + off; // index into habit.week
@@ -163,10 +163,11 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
     })) : []),
     ...(perms.habitos ? habits.map((h) => ({ id: `h${h.id}`, hid: h.id, icon: h.icon, t: h.name, s: `Hábito · ${[h.detail, h.reminder && `às ${h.reminder}`].filter(Boolean).join(' · ') || h.freq.toLowerCase()}`, done: !!h.week[day] })) : []),
   ];
-  const dayMood = past ? (demo ? WEEK[6 + off][1] : null) : mood; // real mode: past days are not stored yet
-  const dayWater = past ? (demo ? PAST_WATER[-off - 1] : 0) : water;
+  const pastMoods = log ? log.mood.filter((m) => dayKey(new Date(m.at)) === offsetKey(off)).map((m) => m.v) : [];
+  const dayMood = past ? (demo ? WEEK[6 + off][1] : pastMoods.length ? Math.round(pastMoods.reduce((a, b) => a + b, 0) / pastMoods.length) : null) : mood;
+  const dayWater = past ? (demo ? PAST_WATER[-off - 1] : log?.water[offsetKey(off)] ?? 0) : water;
   const toggle = (it) => (it.med
-    ? setTaken((t) => { const n = { ...t }; if (n[it.id]) delete n[it.id]; else n[it.id] = '09:41'; return n; })
+    ? setTaken((t) => { const n = { ...t }; if (n[it.id]) delete n[it.id]; else n[it.id] = nowHHMM(); return n; })
     : setHabits(habits.map((h) => (h.id === it.hid ? { ...h, week: h.week.map((w, n) => (n === 6 ? 1 - w : w)) } : h))));
   const done = items.filter((i) => i.done).length;
   return (
@@ -185,7 +186,7 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
           : <button className="icon-btn avatar-btn" aria-label="Perfil e configurações" onClick={() => go('config')}><Avatar name={patientPrefs.account.name} size={40} tone={2} /></button>}
       </header>
 
-      {past && <p className="readonly-note"><Icon name="lock" size={14} /> Dias anteriores são só para consulta. Você pode ajustar apenas o sono.</p>}
+      {past && <p className="readonly-note"><Icon name="lock" size={14} /> Dias anteriores são só para consulta. Se esqueceu, ainda dá para registrar o sono.</p>}
 
       {/* shortcut: only demo has a scheduled session; real sessions come once the agenda is stored in Supabase */}
       {!past && !demo && (
@@ -222,19 +223,18 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
           <div><p className="muted sm">Humor registrado</p><p className="row-title">{MOODS_LABEL[dayMood - 1]}</p></div>
         </section>
       ) : (
-        <section className="card card-soft">
-          <div className="row-between">
-            <h2 className="h3">Como você está agora?</h2>
-            <span className="pill-mini">5 seg</span>
-          </div>
-          <MoodPicker value={mood} onChange={setMood} />
-          {mood && <p className="saved-note"><Icon name="check" size={16} /> Registrado. {perms.emocoes && <>Quer dizer o que sente? <button className="link" onClick={() => go('humor')}>Emoções</button></>}</p>}
-        </section>
+        mood ? (
+          <section className="card row gap12">
+            <MoodFace v={mood} size={40} />
+            <div className="grow"><p className="muted sm row gap4"><Icon name="lock" size={12} /> Humor de hoje registrado</p><p className="row-title">{MOODS_LABEL[mood - 1]}</p></div>
+            {perms.emocoes && <button className="link" onClick={() => go('humor')}>Emoções</button>}
+          </section>
+        ) : <MoodCard setMood={setMood} />
       ))}
 
       {perms.sono && <Sleep key={off} off={off} value={sleep[off]} onSave={(v) => setSleep({ ...sleep, [off]: v })} />}
 
-      {perms.agua && <Water water={dayWater} setWater={setWater} readOnly={past} goal={waterGoal} />}
+      {perms.agua && <Water water={dayWater} setWater={setWater} readOnly={past} goal={waterGoal} cup={patientPrefs.cupMl ?? 250} />}
 
       {items.length > 0 && (
         <section className="card">
@@ -254,7 +254,7 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
                   <p className={`row-title ${it.done ? 'strike' : ''}`}>{it.t}</p>
                   <p className="muted sm">{it.s}</p>
                 </div>
-                <button className={`check ${it.done ? 'on' : ''}`} disabled={past} aria-label={`Marcar ${it.t}`} aria-pressed={it.done} onClick={() => toggle(it)}>
+                <button className={`check ${it.done ? 'on' : ''}`} disabled={past || it.done} aria-label={`Marcar ${it.t}`} aria-pressed={it.done} onClick={() => toggle(it)}>
                   <Icon name="check" size={16} stroke={2.4} />
                 </button>
               </li>
@@ -269,22 +269,37 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
           <p className="muted sm">Escolha a que mais marcou o seu dia.</p>
           <div className="chips mt12" role="radiogroup" aria-label="Emoção do dia">
             {DAY_EMOTIONS.map((f) => (
-              <button key={f} role="radio" aria-checked={dayEmotion === f} className={`chip-sel neg ${dayEmotion === f ? 'on' : ''}`} onClick={() => pickEmotion(f)}>
+              <button key={f} role="radio" aria-checked={dayEmotion === f} disabled={!!dayEmotion && dayEmotion !== f} className={`chip-sel neg ${dayEmotion === f ? 'on' : ''}`} onClick={() => !dayEmotion && pickEmotion(f)}>
                 {dayEmotion === f && <Icon name="check" size={14} stroke={2.4} />}{f}
               </button>
             ))}
           </div>
-          {dayEmotion && <p className="saved-note"><Icon name="check" size={16} /> Registrado</p>}
+          {dayEmotion && <p className="saved-note"><Icon name="lock" size={14} /> Registrada. Amanhã você escolhe de novo.</p>}
         </section>
       )}
     </>
   );
 }
 
+// Mood is picked, then confirmed: once registered it stays for the day.
+function MoodCard({ setMood }) {
+  const [pick, setPick] = useState(null);
+  return (
+    <section className="card card-soft">
+      <div className="row-between">
+        <h2 className="h3">Como você está agora?</h2>
+        <span className="pill-mini">5 seg</span>
+      </div>
+      <MoodPicker value={pick} onChange={setPick} />
+      {pick && <button className="btn-primary block mt12" onClick={() => { setMood(pick); toast('Humor registrado'); }}>Registrar humor</button>}
+    </section>
+  );
+}
+
 function Sleep({ off, value, onSave }) {
   const [d, setD] = useState(value ?? { bed: '23:30', wake: '07:00', q: 0, wakeups: 0 });
-  const [saved, setSaved] = useState(!!value);
-  const set = (patch) => { setSaved(false); setD({ ...d, ...patch }); };
+  const locked = !!value; // a registered night cannot be changed
+  const set = (patch) => { if (!locked) setD({ ...d, ...patch }); };
   const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
   const dur = (toMin(d.wake) - toMin(d.bed) + 1440) % 1440;
   const Q = ['Péssimo', 'Ruim', 'Ok', 'Bom', 'Ótimo'];
@@ -301,32 +316,32 @@ function Sleep({ off, value, onSave }) {
         <p className="sleep-dur">{Math.floor(dur / 60)}h{String(dur % 60).padStart(2, '0')}</p>
       </div>
       <div className="sleep-times">
-        <label>Deitou<input type="time" value={d.bed} onChange={(e) => set({ bed: e.target.value })} /></label>
-        <label>Acordou<input type="time" value={d.wake} onChange={(e) => set({ wake: e.target.value })} /></label>
+        <label>Deitou<input type="time" disabled={locked} value={d.bed} onChange={(e) => set({ bed: e.target.value })} /></label>
+        <label>Acordou<input type="time" disabled={locked} value={d.wake} onChange={(e) => set({ wake: e.target.value })} /></label>
         <div className="stepper">
           <span>Despertares</span>
           <div className="row">
-            <button aria-label="Menos despertares" disabled={!d.wakeups} onClick={() => set({ wakeups: d.wakeups - 1 })}><Icon name="minus" size={14} /></button>
+            <button aria-label="Menos despertares" disabled={locked || !d.wakeups} onClick={() => set({ wakeups: d.wakeups - 1 })}><Icon name="minus" size={14} /></button>
             <b aria-live="polite">{d.wakeups}</b>
-            <button aria-label="Mais despertares" onClick={() => set({ wakeups: d.wakeups + 1 })}><Icon name="plus" size={14} /></button>
+            <button aria-label="Mais despertares" disabled={locked} onClick={() => set({ wakeups: d.wakeups + 1 })}><Icon name="plus" size={14} /></button>
           </div>
         </div>
       </div>
       <p className="muted sm mt12">Como foi o sono?</p>
       <div className="q-row" role="radiogroup" aria-label="Qualidade do sono">
         {Q.map((l, i) => (
-          <button key={l} role="radio" aria-checked={d.q === i + 1} className={d.q === i + 1 ? 'on' : ''} onClick={() => set({ q: i + 1 })}>{l}</button>
+          <button key={l} role="radio" disabled={locked && d.q !== i + 1} aria-checked={d.q === i + 1} className={d.q === i + 1 ? 'on' : ''} onClick={() => set({ q: i + 1 })}>{l}</button>
         ))}
       </div>
-      <button className="btn-secondary block mt12" disabled={saved || !d.q} onClick={() => { onSave(d); setSaved(true); }}>
-        {saved ? <><Icon name="check" size={16} /> Sono registrado</> : value ? 'Atualizar sono' : 'Registrar sono'}
-      </button>
+      {locked
+        ? <p className="saved-note"><Icon name="lock" size={14} /> Sono registrado</p>
+        : <button className="btn-primary block mt12" disabled={!d.q} onClick={() => { onSave(d); toast('Sono registrado'); }}>Registrar sono</button>}
     </section>
   );
 }
 
-function Water({ water, setWater, readOnly, goal }) {
-  const cups = Math.ceil(goal / 250);
+function Water({ water, setWater, readOnly, goal, cup = 250 }) {
+  const cups = Math.ceil(goal / cup);
   return (
     <section className="card">
       <div className="row-between">
@@ -338,14 +353,13 @@ function Water({ water, setWater, readOnly, goal }) {
           </div>
         </div>
         {!readOnly && <div className="row gap6">
-          <button className="icon-btn bordered" aria-label="Tirar um copo" disabled={!water} onClick={() => setWater(Math.max(0, water - 250))}><Icon name="minus" size={16} /></button>
-          <button className="btn-sm water-btn" onClick={() => setWater(water + 250)}><Icon name="plus" size={14} /> Copo</button>
+          <button className="btn-sm water-btn" onClick={() => setWater(water + cup)}><Icon name="plus" size={14} /> Copo de {cup} ml</button>
         </div>}
       </div>
       <div className="cups" aria-hidden="true">
-        {Array.from({ length: cups }, (_, i) => <span key={i} className={`cup ${i < water / 250 ? 'full' : ''}`} />)}
+        {Array.from({ length: cups }, (_, i) => <span key={i} className={`cup ${i < water / cup ? 'full' : ''}`} />)}
       </div>
-      {water >= goal ? <p className="saved-note"><Icon name="check" size={16} /> Meta de hoje alcançada</p> : <p className="xs muted mt8">Meta definida pela sua psicóloga · copos de 250 ml</p>}
+      {water >= goal ? <p className="saved-note"><Icon name="check" size={16} /> Meta de hoje alcançada</p> : <p className="xs muted mt8">Meta definida pela sua psicóloga · mude o tamanho do copo em Configurações</p>}
     </section>
   );
 }
@@ -366,27 +380,38 @@ function Chips({ items, value, onToggle, tone }) {
   );
 }
 
-function Humor({ demo, perms, mood, setMood, setEmotions }) {
+// What is registered today is locked; after saving, the app confirms and goes back to Hoje.
+function Humor({ demo, perms, mood, setMood, addEmotions, todayEmotions, go }) {
+  const [pick, setPick] = useState(null);
   const [feel, setFeel] = useState([]);
   const [inf, setInf] = useState([]);
   const [intensity, setIntensity] = useState(3);
-  const [saved, setSaved] = useState(false);
-  const tog = (arr, set) => (v) => { setSaved(false); set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]); };
-  const canSave = (perms.humor && mood) || feel.length > 0;
+  const tog = (arr, set) => (v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
+  const emoLocked = todayEmotions.length > 0;
+  const canSave = (perms.humor && !mood && pick) || (!emoLocked && feel.length > 0);
   const save = () => {
-    setEmotions((e) => { const n = { ...e }; feel.forEach((f) => { n[f] = (n[f] || 0) + 1; }); return n; });
-    setSaved(true);
+    if (perms.humor && !mood && pick) setMood(pick);
+    if (!emoLocked && feel.length) addEmotions(feel, { intensity, influences: inf });
+    toast('Registro salvo');
+    go('hoje');
   };
   return (
     <>
-      <Header title={perms.humor ? 'Humor e emoções' : 'Emoções'} sub="Registre quantas vezes quiser ao longo do dia" />
+      <Header title={perms.humor ? 'Humor e emoções' : 'Emoções'} sub="Um registro por dia. Depois de salvo, ele fica guardado como está." />
       {perms.humor && (
         <section className="card">
-          <p className="eyebrow">Agora, 09:41</p>
-          <MoodPicker value={mood} onChange={(v) => { setSaved(false); setMood(v); }} />
+          {mood
+            ? <div className="row gap12"><MoodFace v={mood} size={40} /><div><p className="muted sm row gap4"><Icon name="lock" size={12} /> Humor de hoje registrado</p><p className="row-title">{MOODS_LABEL[mood - 1]}</p></div></div>
+            : <><p className="eyebrow">Agora, {nowHHMM()}</p><MoodPicker value={pick} onChange={setPick} /></>}
         </section>
       )}
-      {perms.emocoes && (
+      {perms.emocoes && emoLocked && (
+        <section className="card">
+          <p className="muted sm row gap4"><Icon name="lock" size={12} /> Emoções de hoje registradas</p>
+          <div className="chips">{todayEmotions.map((f) => <span key={f} className={`chip-sel ${EMOTIONS.pos.includes(f) ? 'pos' : 'neg'} on`}>{f}</span>)}</div>
+        </section>
+      )}
+      {perms.emocoes && !emoLocked && (
         <section className="card">
           <h2 className="h3">O que você está sentindo?</h2>
           <p className="muted sm">Pode escolher mais de uma.</p>
@@ -409,7 +434,7 @@ function Humor({ demo, perms, mood, setMood, setEmotions }) {
         </section>
       )}
       <button className="btn-primary block" disabled={!canSave} onClick={save}>
-        {saved ? <><Icon name="check" size={18} /> Registro salvo</> : 'Salvar registro'}
+        Salvar registro
       </button>
       <p className="hint center"><Icon name="eye" size={14} /> Sua psicóloga verá este registro</p>
 
@@ -453,10 +478,10 @@ function Rotina(props) {
   );
 }
 
-function Habitos({ perms, water, setWater, waterGoal, habits: h, setHabits: setH }) {
+function Habitos({ perms, patientPrefs, water, setWater, waterGoal, habits: h, setHabits: setH }) {
   return (
     <>
-      {perms.agua && <Water water={water} setWater={setWater} goal={waterGoal} />}
+      {perms.agua && <Water water={water} setWater={setWater} goal={waterGoal} cup={patientPrefs.cupMl ?? 250} />}
       {perms.habitos && h.length === 0 && <p className="hint">Sua psicóloga ainda não definiu hábitos.</p>}
       {perms.habitos && h.map((x, i) => (
         <section key={x.id} className="card habit">
@@ -474,7 +499,7 @@ function Habitos({ perms, water, setWater, waterGoal, habits: h, setHabits: setH
               return (
                 <button
                   key={j} className={`day ${x.week[j] ? 'done' : ''} ${isToday ? 'today' : ''}`}
-                  disabled={!isToday} aria-label={isToday ? `Marcar ${x.name} hoje` : undefined} aria-pressed={isToday ? !!x.week[j] : undefined}
+                  disabled={!isToday || !!x.week[j]} aria-label={isToday ? `Marcar ${x.name} hoje` : undefined} aria-pressed={isToday ? !!x.week[j] : undefined}
                   onClick={() => setH(h.map((y, k) => (k === i ? { ...y, week: y.week.map((w, n) => (n === 6 ? 1 - w : w)) } : y)))}
                 >
                   <span className="day-dot">{x.week[j] ? <Icon name="check" size={13} stroke={2.6} /> : null}</span>
@@ -507,11 +532,11 @@ function Remedios({ perms, meds, taken, setTaken, rx, setRx }) {
                     <p className="muted sm">{m.instr}</p>
                   </div>
                   {taken[m.id] ? (
-                    <button className="chip chip-ok" onClick={() => { const n = { ...taken }; delete n[m.id]; setTaken(n); }} aria-label={`Desmarcar ${m.name}`}>
+                    <span className="chip chip-ok" aria-label={`${m.name} tomado às ${taken[m.id]}`}>
                       <Icon name="check" size={13} stroke={2.4} /> {taken[m.id]}
-                    </button>
+                    </span>
                   ) : (
-                    <button className="btn-sm" onClick={() => setTaken({ ...taken, [m.id]: '09:41' })}>Tomei</button>
+                    <button className="btn-sm" onClick={() => setTaken({ ...taken, [m.id]: nowHHMM() })}>Tomei</button>
                   )}
                 </div>
               </li>
@@ -532,8 +557,14 @@ function Receitas({ rx, setRx }) {
     if (!f) return;
     e.target.value = '';
     if (!/^image\/|application\/pdf/.test(f.type)) { toast('Envie uma foto ou um PDF da receita', 'warn'); return; }
-    setRx([{ id: Date.now(), med: '', date: 'Hoje', file: f.name, url: URL.createObjectURL(f), status: 'Nova' }, ...rx]);
-    toast('Receita enviada à sua psicóloga');
+    if (f.size > 2 * 1024 * 1024) { toast('Arquivo grande demais: envie uma foto ou PDF de até 2 MB', 'warn'); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      setRx([{ id: Date.now(), med: '', date: new Date().toLocaleDateString('pt-BR'), file: f.name, data: r.result, status: 'Nova' }, ...rx]);
+      toast('Receita enviada à sua psicóloga');
+    };
+    r.onerror = () => toast('Não foi possível ler o arquivo. Tente de novo.', 'warn');
+    r.readAsDataURL(f); // saved with the record so the psychologist can open it
   };
   return (
     <section className="card">
@@ -555,7 +586,7 @@ function Receitas({ rx, setRx }) {
           <li key={r.id} className="list-row">
             <div className="grow">
               <p className="row-title">{r.med || r.file}</p>
-              <p className="muted sm">{r.med && `${r.file} · `}enviada {r.date === 'Hoje' ? 'hoje' : `em ${r.date}`}</p>
+              <p className="muted sm">{r.med && `${r.file} · `}enviada em {r.date}</p>
             </div>
             <span className={`chip ${r.status === 'Nova' ? 'chip-quiet' : 'chip-ok'}`}>{r.status === 'Nova' ? 'Enviada' : 'Aceita'}</span>
           </li>
@@ -578,15 +609,19 @@ const INITIAL_TOPICS = [
 ];
 const PROMPT = 'O que te trouxe um pouco de calma hoje?';
 
-function DiarioTab({ demo, perms, sub, setSub }) {
+// Real login: entries and topics are saved in the patient record (the panel sees shared entries and the topics).
+function DiarioTab({ store, perms, sub, setSub }) {
   const opts = [...(perms.diario ? [['diario', 'Diário']] : []), ...(perms.pauta ? [['pauta', 'Assuntos da sessão']] : [])];
   const cur = opts.some((o) => o[0] === sub) ? sub : opts[0][0];
-  const [entries, setEntries] = useState(demo ? INITIAL_ENTRIES : []);
-  const [topics, setTopics] = useState(demo ? INITIAL_TOPICS : []);
+  const [localEntries, setLocalEntries] = useState(store.demo ? INITIAL_ENTRIES : []);
+  const [localTopics, setLocalTopics] = useState(store.demo ? INITIAL_TOPICS : []);
+  const [entries, setEntries] = store.demo ? [localEntries, setLocalEntries] : [store.diary, store.setDiary];
+  const [topics, setTopics] = store.demo ? [localTopics, setLocalTopics] : [store.topics, store.setTopics];
   const [writing, setWriting] = useState(null); // { t } prefill
   const save = (e) => {
-    setEntries([{ ...e, id: Date.now(), d: 'Hoje · 09:41' }, ...entries]);
-    if (e.agenda) setTopics([...topics, { t: e.t, d: 'Hoje', from: 'veio do diário' }]);
+    const now = new Date();
+    setEntries([{ ...e, id: Date.now(), at: now.toISOString(), d: `${now.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' })} · ${nowHHMM()}` }, ...entries]);
+    if (e.agenda) setTopics([...topics, { t: e.t, d: now.toLocaleDateString('pt-BR').slice(0, 5), from: 'veio do diário' }]);
     toast(e.agenda ? 'Salvo no diário e adicionado aos assuntos' : 'Salvo no diário');
     setWriting(null);
   };
@@ -648,7 +683,7 @@ function Diario({ entries, onWrite }) {
 /* ---------- ASSUNTOS DA SESSÃO (aba do Diário) ---------- */
 function Pauta({ topics, setTopics }) {
   const [draft, setDraft] = useState('');
-  const add = (e) => { e.preventDefault(); if (!draft.trim()) return; setTopics([...topics, { t: draft.trim(), d: 'Hoje' }]); setDraft(''); toast('Assunto adicionado'); };
+  const add = (e) => { e.preventDefault(); if (!draft.trim()) return; setTopics([...topics, { t: draft.trim(), d: new Date().toLocaleDateString('pt-BR').slice(0, 5) }]); setDraft(''); toast('Assunto adicionado'); };
   const toggle = (t) => setTopics(topics.map((x) => (x.t === t ? { ...x, prio: !x.prio } : x)));
   const remove = (t) => setTopics(topics.filter((x) => x.t !== t));
   return (
@@ -770,6 +805,74 @@ function Documentos({ store }) {
           <label className="field">Para que você precisa (opcional)<textarea rows={3} value={asking.why} onChange={(e) => setAsking({ ...asking, why: e.target.value })} placeholder="Ex.: apresentar no trabalho" /></label>
         </Modal>
       )}
+    </>
+  );
+}
+
+/* ---------- MEUS REGISTROS ---------- */
+// The patient's own history, computed from the saved log (src/records.js).
+function MeusRegistros({ store }) {
+  const log = store.log ?? emptyLog();
+  const record = { log, plan: { habits: store.habits, meds: store.meds } };
+  const days14 = lastDays(14);
+  const days7 = lastDays(7);
+  const moods = dailyMood(log, days14);
+  const s = stats(record, { days: 14 });
+  const w = stats(record, { days: 7 });
+  const emo = Object.entries(s.emotions).sort((a, b) => b[1] - a[1]);
+  const emoMax = emo[0]?.[1] || 1;
+  const nights = days7.map((d) => [d, log.sleep[d]]);
+  const water = days7.map((d) => [d, log.water[d] ?? 0]);
+  const wd = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+  const filled = moods.reduce((acc, v) => [...acc, v ?? acc[acc.length - 1] ?? null], []);
+  return (
+    <>
+      <Header title="Meus registros" sub="O que você registrou nos últimos dias" />
+      <section className="card">
+        <div className="row-between"><h2 className="h3">Humor · 14 dias</h2><span className="muted sm">Média <strong className="ink">{num(s.moodAvg)}</strong></span></div>
+        {s.moodN ? <LineChart points={filled.map((v) => v ?? 3)} min={1} max={6} height={120} labels={[fmtDay(days14[0]), fmtDay(days14[7]), 'Hoje']} /> : <p className="hint mt8">Registre seu humor em Hoje para ver o gráfico.</p>}
+      </section>
+      <section className="card">
+        <div className="row-between"><h2 className="h3">Sono · 7 noites</h2><span className="muted sm">Média <strong className="ink">{fmtH(w.sleepAvg)}</strong></span></div>
+        <div className="bars">
+          {nights.map(([d, n]) => (
+            <div key={d} className="bar-col">
+              <span className="xs muted">{n ? fmtH(sleepMin(n)) : '—'}</span>
+              <div className="bar-track"><span className="bar-fill m5" style={{ height: `${n ? Math.min(100, (sleepMin(n) / 600) * 100) : 0}%` }} /></div>
+              <span className="sm muted">{wd(d)}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="card">
+        <div className="row-between"><h2 className="h3">Água · 7 dias</h2><span className="muted sm">Meta {fmtL(store.waterGoal)}</span></div>
+        <div className="bars">
+          {water.map(([d, ml]) => (
+            <div key={d} className="bar-col">
+              <span className="xs muted">{ml ? fmtL(ml) : '—'}</span>
+              <div className="bar-track"><span className="bar-fill m4" style={{ height: `${Math.min(100, (ml / store.waterGoal) * 100)}%` }} /></div>
+              <span className="sm muted">{wd(d)}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="card">
+        <h2 className="h3">Emoções · 14 dias</h2>
+        {emo.length ? (
+          <ul className="emo-bars mt8">
+            {emo.map(([e, n]) => (
+              <li key={e}><span className="sm">{e}</span><span className="emo-track"><span className={EMOTIONS.pos.includes(e) ? 'pos' : 'neg'} style={{ width: `${(n / emoMax) * 100}%` }} /></span><b className="sm">{n}</b></li>
+            ))}
+          </ul>
+        ) : <p className="hint mt8">Nenhuma emoção registrada ainda.</p>}
+      </section>
+      <section className="card">
+        <h2 className="h3">Rotina · 7 dias</h2>
+        <div className="mini-stats">
+          <div><p className="muted sm">Hábitos cumpridos</p><p className="kpi-value sm-kpi">{w.habitPct == null ? '—' : `${w.habitPct}%`}</p></div>
+          <div><p className="muted sm">Remédios tomados</p><p className="kpi-value sm-kpi">{w.medPct == null ? '—' : `${w.medPct}%`}</p></div>
+        </div>
+      </section>
     </>
   );
 }
