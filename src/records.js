@@ -15,11 +15,11 @@ export const offsetKey = (off, now = new Date()) => dayKey(addDays(now, off));
 export const lastDays = (n, now = new Date(), endOff = 0) => Array.from({ length: n }, (_, i) => offsetKey(endOff - n + 1 + i, now));
 const fmtDay = (k) => k.split('-').reverse().slice(0, 2).join('/');
 
-const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+export const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
 export const num = (v, d = 1) => (v == null ? '—' : v.toFixed(d).replace('.', ','));
 export const sleepMin = (n) => { const t = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; }; return (t(n.wake) - t(n.bed) + 1440) % 1440; };
 export const fmtH = (min) => (min == null ? '—' : `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`);
-const FREQ_PER_WEEK = { 'Todos os dias': 7, 'Dias úteis': 5, '5 vezes por semana': 5, '3 vezes por semana': 3, '1 vez por semana': 1 };
+export const FREQ_PER_WEEK = { 'Todos os dias': 7, 'Dias úteis': 5, '5 vezes por semana': 5, '3 vezes por semana': 3, '1 vez por semana': 1 };
 
 export const emptyLog = () => ({ mood: [], sleep: {}, water: {}, emotions: [], habits: {}, meds: {}, dayEmotion: {} });
 export const withLog = (record) => ({ ...emptyLog(), ...(record?.log ?? {}) });
@@ -27,7 +27,7 @@ export const withLog = (record) => ({ ...emptyLog(), ...(record?.log ?? {}) });
 // Average mood per day for the given day keys (null when nothing was logged that day).
 export const dailyMood = (log, days) => days.map((d) => avg(log.mood.filter((m) => dayKey(new Date(m.at)) === d).map((m) => m.v)));
 
-const loggedOn = (log, d) => log.mood.some((m) => dayKey(new Date(m.at)) === d) || log.sleep[d] || log.water[d] || log.habits[d]?.length
+export const loggedOn = (log, d) => log.mood.some((m) => dayKey(new Date(m.at)) === d) || log.sleep[d] || log.water[d] || log.habits[d]?.length
   || Object.keys(log.meds[d] ?? {}).length || log.dayEmotion[d] || log.emotions.some((e) => dayKey(new Date(e.at)) === d);
 
 // Numbers for a window of `days` days ending `endOff` days from today.
@@ -77,26 +77,29 @@ export function patientView(record, defaultPerms) {
     waterGoal: plan.waterGoal ?? 2000,
     cid: record?.clinical?.cid ?? '',
     risk: record?.clinical?.risk ?? 'Não definido',
+    riskAt: record?.clinical?.riskAt ?? null,
     rx: (record?.rx ?? []).map((r) => ({ ...r, ...(rxStatus[r.id] ?? {}) })),
     mood: moods14.length >= 2 ? moods14 : moods14.length === 1 ? [moods14[0], moods14[0]] : null,
     use: Math.round((s14.logDays / 14) * 100),
     emotions: s14.emotions,
     diary: record?.diary ?? [],
     topics: record?.topics ?? [],
+    notes: record?.notes ?? [], // session follow-up, panel only
+    triage: record?.triage ?? {}, // psychologist's priority per topic text, panel only
     log, record,
     todayMood: avg(log.mood.filter((m) => dayKey(new Date(m.at)) === today).map((m) => m.v)),
   };
 }
 
-const std = (xs) => { const m = avg(xs); return xs.length > 1 ? Math.sqrt(avg(xs.map((x) => (x - m) ** 2))) : 0; };
+export const std = (xs) => { const m = avg(xs); return xs.length > 1 ? Math.sqrt(avg(xs.map((x) => (x - m) ** 2))) : 0; };
 // Least-squares slope of y over x (points per day). null with fewer than 4 points.
-const slope = (pts) => {
+export const slope = (pts) => {
   if (pts.length < 4) return null;
   const mx = avg(pts.map((p) => p[0])); const my = avg(pts.map((p) => p[1]));
   const den = pts.reduce((s, [x]) => s + (x - mx) ** 2, 0);
   return den ? pts.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / den : null;
 };
-const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 // Pre-session summary. Rules:
 // - says how much data it is based on, and stays quiet about a measure with too few points;

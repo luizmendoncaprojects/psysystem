@@ -11,9 +11,9 @@ export const fromServerDoc = (d, patients = []) => ({
   date: new Date(d.signedAt).toLocaleDateString('pt-BR'), status: 'Assinado', delivery: 'No app', code: d.code, server: true,
 });
 // Real accounts sign on the server with the saved A1 certificate and the document is stored there; the demo keeps a fake code.
-async function signDocument(store, doc, requestId) {
+export async function signDocument(store, doc, requestId) {
   if (store.demo) return { ...doc, code: makeCode() };
-  const { document } = await api.documents.sign({ patientId: doc.pid, requestId, title: doc.title, body: doc.body, crp: store.panelPrefs.account.crp });
+  const { document } = await api.documents.sign({ patientId: doc.pid, requestId, title: doc.title, body: doc.body, crp: store.panelPrefs.account.crp, charts: doc.charts });
   if (requestId) store.setRequests((rs) => rs.filter((r) => r.id !== requestId));
   return { ...doc, ...fromServerDoc(document, store.patients) };
 }
@@ -209,7 +209,7 @@ export function UploadTemplateModal({ onClose, onSave }) {
 }
 
 /* ---------- Documents page ---------- */
-export function DocumentosOficiais({ store, openEditor }) {
+export function DocumentosOficiais({ store, openEditor, tabs }) {
   const { docs, setDocs, templates, setTemplates, panelPrefs } = store;
   const [f, setF] = useState('todos');
   const [sel, setSel] = useState(docs[0]?.id);
@@ -232,6 +232,7 @@ export function DocumentosOficiais({ store, openEditor }) {
         title="Documentos oficiais" sub="Crie a partir de um modelo, edite o texto, assine e entregue no app do paciente"
         actions={<><button className="btn-secondary" onClick={() => setUpload(true)}><Icon name="upload" size={16} /> Subir modelo</button><button className="btn-primary" onClick={() => openEditor({})}><Icon name="plus" size={16} /> Novo documento</button></>}
       />
+      {tabs}
       {(store.requests ?? []).length > 0 && (
         <section className="panel">
           <h2 className="h3">Pedidos dos pacientes</h2>
@@ -264,12 +265,11 @@ export function DocumentosOficiais({ store, openEditor }) {
           </div>
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th>Documento</th><th>Data</th><th>Status</th><th className="right">Ação</th></tr></thead>
+              <thead><tr><th>Documento</th><th>Status</th><th className="right">Ação</th></tr></thead>
               <tbody>
                 {pg.rows.map((d) => (
                   <tr key={d.id} className={`clickable ${cur?.id === d.id ? 'selected' : ''}`} onClick={() => setSel(d.id)}>
-                    <td><p className="row-title">{d.title}</p><p className="xs muted">{d.name}{d.delivery !== '—' && ` · entregue ${d.delivery.toLowerCase()}`}</p></td>
-                    <td>{d.date}</td>
+                    <td><p className="row-title">{d.title}</p><p className="xs muted">{d.date} · {d.name}{d.delivery !== '—' && ` · entregue ${d.delivery.toLowerCase()}`}</p></td>
                     <td><Chip kind={STATUS_KIND[d.status] ?? 'quiet'}>{d.status}</Chip></td>
                     <td className="right">
                       <div className="row gap6 end">

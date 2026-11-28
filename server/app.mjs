@@ -74,7 +74,16 @@ const patientView = (p) => ({
   link: p.user_id || !p.link_code ? null : linkUrl(p.link_code),
 });
 // Each record key has a single writer, so the two sides never overwrite each other.
-const RECORD_KEYS = { psicologa: ['plan', 'clinical', 'rxStatus'], paciente: ['log', 'diary', 'topics', 'rx'] };
+// Who may write each record key. notes = session follow-up (prontuário), triage = the psychologist's own topic priority.
+export const RECORD_KEYS = { psicologa: ['plan', 'clinical', 'rxStatus', 'notes', 'triage'], paciente: ['log', 'diary', 'topics', 'rx'] };
+// Keys the patient app never receives.
+export const PANEL_ONLY = ['clinical', 'notes', 'triage'];
+// Charts drawn in a signed PDF (timeline report). Untrusted input: keep only numbers and short labels.
+const cleanCharts = (charts) => (Array.isArray(charts) ? charts.slice(0, 6) : []).map((c) => {
+  const n = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+  const min = n(c?.min) ?? 0; const max = n(c?.max) ?? 1;
+  return { title: String(c?.title ?? '').slice(0, 60), min, max: max > min ? max : min + 1, points: (Array.isArray(c?.points) ? c.points.slice(0, 400) : []).map(n), labels: (Array.isArray(c?.labels) ? c.labels.slice(0, 2) : []).map((l) => String(l).slice(0, 12)) };
+});
 const DOC_COLS ='id,patient_id,title,body,code,signed_by,signed_at'; // everything but the PDF bytes
 // title, body, signer and PDF are stored encrypted (AES-256-GCM, CERT_KEY): the database only holds ciphertext.
 const docView = (d) => ({ id: d.id, patientId: d.patient_id, title: cert.unseal(d.title), body: cert.unseal(d.body), code: d.code, signedBy: d.signed_by && cert.unseal(d.signed_by), signedAt: d.signed_at });
@@ -237,7 +246,7 @@ const routes = {
     const now = new Date();
     const code = `KW-${crypto.randomBytes(6).toString('hex').toUpperCase().match(/.{4}/g).join('-')}`; // unique key (UNIQUE in the table)
     const pdf = await buildPdf({
-      title: text(b.title, 200) || 'Documento', body: text(b.body, 50_000), author: s.name, crp: text(b.crp, 60), place: text(b.place, 80) || 'Goiânia',
+      title: text(b.title, 200) || 'Documento', body: text(b.body, 50_000), author: s.name, crp: text(b.crp, 60), place: text(b.place, 80) || 'Goiânia', charts: cleanCharts(b.charts),
       dateLong: now.toLocaleDateString('pt-BR', { timeZone: tz, day: 'numeric', month: 'long', year: 'numeric' }),
       signedBy: c.subject, issuer: c.issuer, signedAt: now.toLocaleString('pt-BR', { timeZone: tz, dateStyle: 'short', timeStyle: 'short' }), code,
     });
@@ -273,7 +282,7 @@ const routes = {
 
   /* ----- patient record (plan set by the psychologist, logs written by the patient) ----- */
   // psychologist: { records: { [patientId]: { key: data } } } for all her patients (diary: shared entries only).
-  // patient: { record: { key: data } } for themself (no clinical notes).
+  // patient: { record: { key: data } } for themself (never the PANEL_ONLY keys).
   'GET /api/records': async (req, res, url) => {
     const s = roleSession(req, url);
     if (!s) return fail(res, 401, 'Faça login para continuar.');
@@ -284,7 +293,7 @@ const routes = {
       rows = await db.list('patient_records', `patient_id=in.(${mine.map((p) => p.id).join(',')})`);
     } else {
       if (!UUID.test(String(s.patientId))) return send(res, 200, { record: {} });
-      rows = await db.list('patient_records', `patient_id=eq.${s.patientId}&key=neq.clinical`);
+      rows = await db.list('patient_records', `patient_id=eq.${s.patientId}&key=not.in.(${PANEL_ONLY.join(',')})`);
     }
     const out = {};
     for (const r of rows) {

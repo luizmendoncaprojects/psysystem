@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import './App.css';
-import './App2.css';
-import './App3.css';
-import './App4.css';
-import './App5.css';
-import './App6.css';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/components.css';
+import './styles/patient.css';
+import './styles/panel.css';
+import './styles/auth.css';
+import './styles/wave.css';
 import Patient from './patient/Patient';
 import Panel from './panel/Panel';
 import Login, { LinkScreen } from './Login';
@@ -88,8 +89,9 @@ export default function App({ initialSessions }) {
   const [records, setRecords] = useState({}); // psychologist: patientId → record
   const [myRecord, setMyRecord] = useState(null); // patient: own record
   const [requests, setRequests] = useState([]); // document requests made by the patient
-  const [patientPrefs, setPatientPrefs] = useState(INITIAL_PATIENT_PREFS);
-  const [panelPrefs, setPanelPrefs] = useState(INITIAL_PANEL_PREFS);
+  // demo tests the 'onda' identity: blue as the default accent (still changeable in Configurações)
+  const [patientPrefs, setPatientPrefs] = useState(demo ? { ...INITIAL_PATIENT_PREFS, accent: '#2f6fd6' } : INITIAL_PATIENT_PREFS);
+  const [panelPrefs, setPanelPrefs] = useState(demo ? { ...INITIAL_PANEL_PREFS, accent: '#2f6fd6' } : INITIAL_PANEL_PREFS);
   // Google Calendar: status from the API; items = this week's Google events on the grid.
   const [google, setGoogle] = useState({ status: 'loading', configured: false, connected: false, email: null, items: [], send: true, names: false, loading: false, error: null });
   useEffect(() => {
@@ -123,9 +125,11 @@ export default function App({ initialSessions }) {
       planKeys.forEach((k) => { plan[k] = k === 'habits' ? patch.habits.map(({ week, ...h }) => h) : patch[k]; }); // week is derived from the log
       saveRecord(id, 'plan', plan);
     }
-    if ('cid' in patch || 'risk' in patch) saveRecord(id, 'clinical', { cid: patch.cid ?? cur.cid, risk: patch.risk ?? cur.risk });
+    if ('cid' in patch || 'risk' in patch) saveRecord(id, 'clinical', { cid: patch.cid ?? cur.cid, risk: patch.risk ?? cur.risk, riskAt: patch.riskAt ?? cur.riskAt ?? null });
+    if ('notes' in patch) saveRecord(id, 'notes', patch.notes);
+    if ('triage' in patch) saveRecord(id, 'triage', patch.triage);
     if ('rx' in patch) saveRecord(id, 'rxStatus', Object.fromEntries(patch.rx.filter((r) => r.status !== 'Nova').map((r) => [r.id, { status: r.status, med: r.med }])));
-    const rest = Object.fromEntries(Object.entries(patch).filter(([k]) => !['perms', 'habits', 'meds', 'waterGoal', 'cid', 'risk', 'rx'].includes(k)));
+    const rest = Object.fromEntries(Object.entries(patch).filter(([k]) => !['perms', 'habits', 'meds', 'waterGoal', 'cid', 'risk', 'riskAt', 'rx', 'notes', 'triage'].includes(k)));
     if (Object.keys(rest).length) setPatients((ps) => ps.map((p) => (p.id === id ? { ...p, ...rest } : p)));
   };
 

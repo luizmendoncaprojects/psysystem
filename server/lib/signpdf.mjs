@@ -65,6 +65,21 @@ export class CadesSigner extends Signer {
   }
 }
 
+// Same monotone curve as smoothPath in src/ui.js (kept in sync by hand: the API cannot import the React code).
+function smoothPath(pts) {
+  const n = pts.length;
+  const f = (v) => v.toFixed(1);
+  const dx = []; const m = [];
+  for (let i = 0; i < n - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; m[i] = (pts[i + 1][1] - pts[i][1]) / (dx[i] || 1); }
+  const t = pts.map((_, i) => (i === 0 ? m[0] : i === n - 1 ? m[n - 2] : m[i - 1] * m[i] <= 0 ? 0 : (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i])));
+  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += ` C${f(pts[i][0] + h)} ${f(pts[i][1] + t[i] * h)} ${f(pts[i + 1][0] - h)} ${f(pts[i + 1][1] - t[i + 1] * h)} ${f(pts[i + 1][0])} ${f(pts[i + 1][1])}`;
+  }
+  return d;
+}
+
 const A4 = [595.28, 841.89];
 const M = 64; // page margin
 const INK = rgb(0.11, 0.1, 0.15);
@@ -111,8 +126,37 @@ export async function buildPdf(doc) {
   y -= 18;
   write(String(doc.title || 'Documento').toUpperCase(), { f: bold, size: 14, center: true });
   y -= 14;
+
+  // Line charts { title, min, max, points: (number|null)[], labels: [first, last] }, full width.
+  // A body line "[[grafico:N]]" draws chart N right there (report: text, chart, text, chart).
+  const charts = (doc.charts ?? []).slice(0, 6);
+  const ch = 120;
+  const drawChart = (c) => {
+    if (y - ch < M + 150) { page = pdf.addPage(A4); pages.push(page); y = A4[1] - M; }
+    y -= ch;
+    page.drawRectangle({ x: M, y, width, height: ch, borderColor: rgb(0.86, 0.85, 0.88), borderWidth: 0.6 });
+    page.drawText(winAnsi(c.title), { x: M + 10, y: y + ch - 16, size: 9, font: bold, color: INK });
+    const plot = { x: M + 12, y: y + 18, w: width - 24, h: ch - 44 };
+    const pts = c.points.map((v, k) => (v == null ? null : {
+      x: plot.x + (c.points.length > 1 ? (k * plot.w) / (c.points.length - 1) : plot.w / 2),
+      y: plot.y + ((Math.min(c.max, Math.max(c.min, v)) - c.min) / (c.max - c.min || 1)) * plot.h,
+    })).filter(Boolean);
+    page.drawLine({ start: { x: plot.x, y: plot.y }, end: { x: plot.x + plot.w, y: plot.y }, thickness: 0.4, color: MUTED });
+    // drawSvgPath: origin at the top-left of the plot, y pointing down.
+    if (pts.length > 1) page.drawSvgPath(smoothPath(pts.map((pt) => [pt.x - plot.x, plot.y + plot.h - pt.y])), { x: plot.x, y: plot.y + plot.h, borderColor: rgb(0.36, 0.31, 0.88), borderWidth: 1.4 });
+    pts.forEach((pt) => page.drawCircle({ x: pt.x, y: pt.y, size: 1.4, color: rgb(0.36, 0.31, 0.88) }));
+    if (!pts.length) page.drawText(winAnsi('Sem registros no período'), { x: plot.x, y: plot.y + plot.h / 2, size: 8, font, color: MUTED });
+    const [l0, l1] = c.labels ?? [];
+    if (l0) page.drawText(winAnsi(l0), { x: plot.x, y: y + 6, size: 7, font, color: MUTED });
+    if (l1) page.drawText(winAnsi(l1), { x: plot.x + plot.w - font.widthOfTextAtSize(winAnsi(l1), 7), y: y + 6, size: 7, font, color: MUTED });
+    y -= 14;
+  };
+  const MARK = /^\[\[grafico:(\d+)\]\]$/;
+  if (!String(doc.body).split('\n').some((l) => MARK.test(l.trim()))) charts.forEach(drawChart); // no markers: charts on top
   for (const block of String(doc.body).split(/\n{2,}/)) {
     for (const line of block.split('\n')) {
+      const mark = line.trim().match(MARK);
+      if (mark) { if (charts[+mark[1]]) { y -= 4; drawChart(charts[+mark[1]]); } continue; }
       const heading = /^[A-ZÁÉÍÓÚÂÊÔÃÕÇ ]{4,}$/.test(line.trim());
       write(line || ' ', heading ? { f: bold, size: 11 } : { size: 11, gap: 5 });
     }

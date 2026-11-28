@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Icon, Avatar, Segmented, Toggle, LineChart, Chip, PageHead, Modal, toast, downloadText, usePaged, Pager, useEvery } from '../ui';
-import { PatientTable, PatientList, PatientProfile } from './Pacientes';
+import { Icon, Avatar, Segmented, Toggle, Chip, PageHead, Modal, toast, downloadText, usePaged, Pager, useEvery } from '../ui';
+import { PatientTable, PatientList } from './Pacientes';
+import { PatientProfile } from './Profile';
 import { brl, REPORT_KINDS, TODAY_STR } from '../data';
 import PanelSettings from './Settings';
 import { DocEditor, DocumentosOficiais, fromServerDoc } from './Docs';
 import { NewPatientModal, SessionModal, EventModal, RunSessionModal, fromServer } from './Modals';
 import { api } from '../api';
-import { alerts, summary, evolution, answer, num, fmtH } from '../records';
+import { alerts, summary } from '../records';
 
-const CRUMB = { painel: 'Clínica / Painel', agenda: 'Clínica / Agenda', pacientes: 'Clínica / Pacientes', relatorios: 'Clínica / Relatórios e resultados', documentos: 'Clínica / Documentos e notas fiscais', copilot: 'Inteligência / Copilot', config: 'Conta / Perfil e configurações' };
+const CRUMB = { prontuarios: 'Prontuário', painel: 'Clínica / Painel', agenda: 'Clínica / Agenda', pacientes: 'Clínica / Pacientes', relatorios: 'Clínica / Relatórios e resultados', documentos: 'Clínica / Documentos e notas fiscais', config: 'Conta / Perfil e configurações' };
 const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${h % 1 ? '30' : '00'}`;
 
 export default function Panel({ store }) {
@@ -19,7 +20,8 @@ export default function Panel({ store }) {
   const [editor, setEditor] = useState(null); // DocEditor start
   const [navOpen, setNavOpen] = useState(false); // mobile drawer
   const go = (p) => { setPage(p); setPid(null); setNavOpen(false); document.querySelector('.d-main')?.scrollTo(0, 0); };
-  const open = (id) => { if (!id) return; setPage('pacientes'); setPid(id); document.querySelector('.d-main')?.scrollTo(0, 0); };
+  const [section, setSection] = useState('resumo'); // section of the open patient page
+  const open = (id, sec = 'resumo') => { if (!id) return; setPage('pacientes'); setPid(id); setSection(sec); document.querySelector('.d-main')?.scrollTo(0, 0); };
   const patient = patients.find((p) => p.id === pid);
   // Real patients (created through the API) join the demo list; their link status comes from the server.
   const { setPatients } = store;
@@ -53,7 +55,6 @@ export default function Panel({ store }) {
   const toSign = docs.filter((d) => d.status === 'Para assinar').length;
   const NAV = [
     { group: 'Clínica', items: [['painel', 'Painel', 'grid'], ['agenda', 'Agenda', 'calendar'], ['pacientes', 'Pacientes', 'users', patients.length], ['relatorios', 'Relatórios e resultados', 'chart'], ['documentos', 'Documentos e notas', 'file', toSign || null]] },
-    { group: 'Inteligência', items: [['copilot', 'Copilot IA', 'sparkles']] },
   ];
 
   return (
@@ -61,6 +62,11 @@ export default function Panel({ store }) {
       {navOpen && <button className="side-scrim" aria-label="Fechar menu" onClick={() => setNavOpen(false)} />}
       <aside className={`side ${navOpen ? 'open' : ''}`} id="side-nav">
         <div className="brand"><span className="brand-mark"><Icon name="logo" size={18} stroke={2.2} /></span> KiWave <span className="brand-sub">Consultório</span></div>
+        <button className={`side-pront ${page === 'prontuarios' ? 'on' : ''}`} aria-current={page === 'prontuarios' ? 'page' : undefined} onClick={() => go('prontuarios')}>
+          <span className="side-pront-ico"><Icon name="pen" size={18} /></span>
+          <span className="grow"><b>Prontuário</b><small>{patients.reduce((t, x) => t + (x.notes?.length ?? 0), 0)} registros</small></span>
+          <Icon name="chevR" size={16} />
+        </button>
         {NAV.map((g) => (
           <nav key={g.group} aria-label={g.group}>
             <p className="side-label">{g.group}</p>
@@ -73,7 +79,7 @@ export default function Panel({ store }) {
         ))}
         <div className="side-foot">
           <div className="status-row"><span className="dot ok" /><div><p className="sm strong">Google Agenda</p><p className="xs muted">Sincronizado há 5 min</p></div></div>
-          <div className="status-row"><span className="dot lock"><Icon name="lock" size={11} stroke={2.4} /></span><div><p className="sm strong">IA local ativa</p><p className="xs muted">Dados não saem do servidor</p></div></div>
+          <div className="status-row"><span className="dot lock"><Icon name="lock" size={11} stroke={2.4} /></span><div><p className="sm strong">Análises locais</p><p className="xs muted">Dados não saem do servidor</p></div></div>
           <button className={`me ${page === 'config' ? 'on' : ''}`} onClick={() => go('config')} aria-label="Perfil e configurações"><Avatar name={prefs.account.name} size={34} tone={4} /><div className="grow"><p className="sm strong">{prefs.account.name}</p><p className="xs muted">{prefs.account.crp}</p></div><Icon name="gear" size={16} /></button>
         </div>
       </aside>
@@ -86,12 +92,12 @@ export default function Panel({ store }) {
           <button className="avatar-btn" aria-label="Abrir perfil e configurações" onClick={() => go('config')}><Avatar name={prefs.account.name} size={34} tone={4} /></button>
         </header>
         <main className="d-main">
+          {page === 'prontuarios' && <Prontuarios patients={patients} open={open} />}
           {page === 'painel' && <Dashboard store={store} a={actions} />}
           {page === 'agenda' && <Agenda store={store} a={actions} />}
-          {page === 'pacientes' && (patient ? <PatientProfile key={pid} p={patient} store={store} a={actions} /> : <PatientList patients={patients} open={open} onNew={actions.newPatient} />)}
+          {page === 'pacientes' && (patient ? <PatientProfile key={`${pid}:${section}`} p={patient} store={store} a={actions} initial={section} /> : <PatientList patients={patients} open={open} onNew={actions.newPatient} />)}
           {page === 'relatorios' && <Relatorios store={store} a={actions} />}
           {page === 'documentos' && <Documentos store={store} a={actions} />}
-          {page === 'copilot' && <Copilot store={store} />}
           {page === 'config' && <PanelSettings store={store} prefs={prefs} setPrefs={setPanelPrefs} onLogout={() => store.logout('psicologa')} />}
         </main>
       </div>
@@ -168,6 +174,89 @@ function Notifications({ store, open, go }) {
   );
 }
 
+/* ---------- PRONTUÁRIOS (all patients) ---------- */
+const MONTHS_SHORT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const fmtD = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString('pt-BR');
+function Prontuarios({ patients, open }) {
+  const [q, setQ] = useState('');
+  const [f, setF] = useState('todos');
+  const month = new Date().toISOString().slice(0, 7);
+  const rows = patients.filter((p) => p.status !== 'Alta' || p.notes?.length).map((p) => {
+    const notes = [...(p.notes ?? [])].sort((a, b) => b.at.localeCompare(a.at));
+    return { p, notes, last: notes[0], plan: notes.find((n) => n.plan)?.plan };
+  });
+  const all = rows.flatMap(({ p, notes }) => notes.map((n) => ({ ...n, p }))).sort((a, b) => b.at.localeCompare(a.at));
+  const thisMonth = all.filter((n) => n.at.startsWith(month)).length;
+  const daysSince = (iso) => Math.floor((Date.now() - new Date(`${iso}T12:00:00`)) / 864e5);
+  const late = rows.filter((r) => r.p.status?.startsWith('Ativ') && (!r.last || daysSince(r.last.at) > 14));
+  const needle = q.trim().toLowerCase();
+  const list = rows
+    .filter((r) => f === 'todos' || (f === 'com' ? r.notes.length : f === 'sem' ? !r.notes.length : late.includes(r)))
+    .filter((r) => !needle || r.p.name.toLowerCase().includes(needle) || r.notes.some((n) => `${n.text} ${n.plan}`.toLowerCase().includes(needle)))
+    .sort((a, b) => (b.last?.at ?? '').localeCompare(a.last?.at ?? '') || a.p.name.localeCompare(b.p.name));
+  const day = (iso) => new Date(`${iso}T12:00:00`);
+  return (
+    <>
+      <div className="prs-hero">
+        <div>
+          <h1 className="prs-title">Prontuário</h1>
+          <p className="prs-sub"><Icon name="lock" size={14} /> Registro documental de cada atendimento. Só você vê; nada daqui aparece no app dos pacientes.</p>
+        </div>
+        <dl className="prs-stats">
+          <div><dt>Registros</dt><dd>{all.length}</dd></div>
+          <div><dt>Neste mês</dt><dd>{thisMonth}</dd></div>
+          <div className={late.length ? 'warn' : ''}><dt>Ativos sem registro há 14 dias</dt><dd>{late.length}</dd></div>
+        </dl>
+      </div>
+
+      <div className="grid-2-1">
+        <section className="panel">
+          <div className="prs-tools">
+            <label className="search prs-search"><Icon name="search" size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar paciente ou texto do prontuário" aria-label="Buscar paciente ou texto do prontuário" /></label>
+            <Segmented small value={f} onChange={setF} options={[['todos', 'Todos', rows.length], ['com', 'Com registro', rows.filter((r) => r.notes.length).length], ['sem', 'Sem registro', rows.filter((r) => !r.notes.length).length], ['atraso', 'Em atraso', late.length]]} />
+          </div>
+          <ul className="prs-list">
+            {list.map(({ p, notes, last, plan }) => (
+              <li key={p.id}>
+                <button className="prs-row" onClick={() => open(p.id, 'prontuario')}>
+                  <Avatar name={p.name} size={40} />
+                  <span className="prs-main">
+                    <span className="row-title">{p.name}</span>
+                    <span className="xs muted">{notes.length ? `${notes.length} ${notes.length === 1 ? 'registro' : 'registros'} · último em ${fmtD(last.at)}, ${last.kind.toLowerCase()}` : 'Nenhum registro ainda'}</span>
+                    {plan && <span className="prs-plan xs"><Icon name="flag" size={12} /> {plan}</span>}
+                  </span>
+                  {late.some((r) => r.p.id === p.id) && <span className="chip chip-warn">{last ? `há ${daysSince(last.at)} dias` : 'sem registro'}</span>}
+                  <Icon name="chevR" size={16} className="muted" />
+                </button>
+              </li>
+            ))}
+            {!list.length && <li className="muted sm pad center">Nenhum paciente com estes filtros.</li>}
+          </ul>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head"><div><h2 className="h3">Registros recentes</h2><p className="muted sm">De todos os pacientes</p></div></div>
+          <ol className="prs-feed">
+            {all.slice(0, 8).map((n) => (
+              <li key={`${n.p.id}${n.id}`}>
+                <button className="prs-feed-item" onClick={() => open(n.p.id, 'prontuario')}>
+                  <time className="prs-feed-date" dateTime={n.at}><b>{day(n.at).getDate()}</b><span>{MONTHS_SHORT[day(n.at).getMonth()]}</span></time>
+                  <span className="prs-main">
+                    <span className="sm strong">{n.p.name}</span>
+                    <span className="xs muted">{n.kind}</span>
+                    <span className="xs prs-excerpt">{n.text}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+            {!all.length && <li className="muted sm">Os registros que você fizer nos pacientes aparecem aqui.</li>}
+          </ol>
+        </section>
+      </div>
+    </>
+  );
+}
+
 /* ---------- PAINEL ---------- */
 const ATTN = [
   ['camila', 'Humor abaixo da média e ansiedade em 9 registros de emoção; enviou receita nova', 'App · Emoções · Receitas', 'smile'],
@@ -181,6 +270,7 @@ function Dashboard({ store, a }) {
   const todayIdx = (now.getDay() + 6) % 7; // 0 = Monday … 4 = Friday (agenda grid)
   const nowH = now.getHours() + now.getMinutes() / 60;
   const today = events.filter((e) => e.day === todayIdx && e.kind !== 'g').sort((x, y) => x.start - y.start);
+  const todayPatients = today.map((e) => patients.find((p) => p.id === e.pid)).filter(Boolean);
   const sessions = events.filter((e) => e.kind !== 'g');
   const active = patients.filter((p) => p.status.startsWith('Ativ')).length;
   const toSign = docs.filter((d) => d.status === 'Para assinar').length;
@@ -258,7 +348,9 @@ function Dashboard({ store, a }) {
           <div><h2 className="h3">Pacientes de hoje</h2><p className="muted sm">Na ordem da agenda</p></div>
           <button className="link" onClick={() => a.go('pacientes')}>Ver todos os {patients.length} <Icon name="chevR" size={14} /></button>
         </div>
-        <PatientTable patients={today.map((e) => patients.find((p) => p.id === e.pid)).filter(Boolean)} open={a.open} compact />
+        {todayPatients.length
+          ? <PatientTable patients={todayPatients} open={a.open} compact />
+          : <p className="muted sm">Nenhum paciente com sessão hoje.</p>}
       </section>
     </>
   );
@@ -472,14 +564,14 @@ function Relatorios({ store, a }) {
     <>
       <PageHead title="Relatórios e resultados" sub="Escalas aplicadas, evolução dos pacientes e documentos em produção" actions={<button className="btn-primary" onClick={() => a.openEditor({ tpl: 'relatorio' })}><Icon name="plus" size={16} /> Novo relatório</button>} />
       <section className="panel">
-        <div className="panel-head"><h2 className="h3">Resultados de escalas</h2><button className="link" onClick={() => a.go('copilot')}><Icon name="sparkles" size={14} /> Ver evolução no Copilot</button></div>
+        <div className="panel-head"><h2 className="h3">Resultados de escalas</h2><span className="xs muted">Clique num paciente para ver a evolução completa</span></div>
         <div className="scales">
           {SCALES.filter(([id]) => patients.some((p) => p.id === id)).length === 0 && <p className="muted sm">Nenhuma escala aplicada ainda.</p>}
           {SCALES.filter(([id]) => patients.some((p) => p.id === id)).map(([id, s, max, band, pts]) => {
             const p = patients.find((x) => x.id === id);
             const last = pts[pts.length - 1][1];
             return (
-              <button key={id} className="scale-card" onClick={() => a.open(id)}>
+              <button key={id} className="scale-card" onClick={() => a.open(id, 'evolucao')}>
                 <div className="row gap10"><Avatar name={p.name} size={32} /><div><p className="row-title">{p.name}</p><p className="xs muted">{s}</p></div></div>
                 <div className="row-between mt12">
                   <p><span className="kpi-value sm-kpi">{last}</span><span className="muted sm"> de {max} · {band}</span></p>
@@ -539,20 +631,23 @@ const MONTHS = ['Novembro/2026', 'Outubro/2026', 'Setembro/2026', 'Agosto/2026']
 
 function Documentos({ store, a }) {
   const [tab, setTab] = useState('docs');
+  // tabs sit under the page title, so each sub-page keeps its own title and actions
+  const tabs = (
+    <div className="tabs-line" role="tablist">
+      {[['docs', 'Documentos oficiais'], ['nf', 'Notas fiscais']].map(([k, l]) => (
+        <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
+      ))}
+    </div>
+  );
   return (
     <>
-      <div className="tabs-line" role="tablist">
-        {[['docs', 'Documentos oficiais'], ['nf', 'Notas fiscais']].map(([k, l]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>
-        ))}
-      </div>
-      {tab === 'docs' ? <DocumentosOficiais store={store} openEditor={a.openEditor} /> : <NotasFiscais store={store} />}
+      {tab === 'docs' ? <DocumentosOficiais store={store} openEditor={a.openEditor} tabs={tabs} /> : <NotasFiscais store={store} tabs={tabs} />}
     </>
   );
 }
 
 // The system does not issue invoices: the psychologist issues them elsewhere (prefeitura, contador) and uploads the PDF here.
-function NotasFiscais({ store }) {
+function NotasFiscais({ store, tabs }) {
   const { notas, setNotas, patients, panelPrefs } = store;
   const active = patients.filter((p) => p.status.startsWith('Ativ'));
   const blank = { pid: active[0]?.id, comp: MONTHS[0], n: '', sessions: 4, value: 4 * panelPrefs.price, file: null };
@@ -590,6 +685,7 @@ function NotasFiscais({ store }) {
         title="Notas fiscais" sub="Emita a nota no sistema da prefeitura ou com seu contador e envie o PDF aqui. O paciente recebe no app e dá ciência."
         actions={<><button className="btn-secondary" onClick={exportCsv}><Icon name="download" size={16} /> Exportar lista</button><button className="btn-primary" disabled={!active.length} title={active.length ? undefined : 'Cadastre um paciente primeiro'} onClick={() => { setDraft(blank); setError(''); }}><Icon name="upload" size={16} /> Enviar nota</button></>}
       />
+      {tabs}
       <div className="kpis">
         <div className="kpi"><p className="kpi-label"><Icon name="file" size={16} /> Enviadas de outubro</p><p className="kpi-value">{brl(month.reduce((s, r) => s + r.value, 0))}</p><p className="muted sm">{month.length} notas</p></div>
         <div className="kpi"><p className="kpi-label"><Icon name="clock" size={16} /> Aguardando ciência</p><p className="kpi-value">{waiting}</p><p className="muted sm">pacientes ainda não confirmaram</p></div>
@@ -663,191 +759,6 @@ function NotasFiscais({ store }) {
           </div>
         </Modal>
       )}
-    </>
-  );
-}
-
-/* ---------- COPILOT ---------- */
-const MONTHLY = [2.6, 2.7, 2.9, 3.1, 3.3, 2.8, 3.4, 3.6, 3.6];
-const ANSWERS = [
-  [/sess/i, 'Últimas 4 sessões: (22/10) planejamento da semana e higiene do sono; (29/10) ansiedade antes de reuniões, treino de respiração; (05/11) revisão dos registros, boa adesão; (12/11) primeira semana de caminhadas e conflito com o gestor. Tema que se repete: trabalho como gatilho.'],
-  [/escala|gad/i, 'Desde a última aplicação (set, GAD-7 = 10) o escore caiu para 9, ainda na faixa leve. Os itens que mais pesam são “preocupação excessiva” e “dificuldade para relaxar”. Insônia inicial melhorou; despertares de madrugada voltaram nesta semana.'],
-  [/evolu/i, 'Rascunho: Paciente relata semana com queda de humor a partir de 13/11, associada a conversa difícil com o gestor. Manteve respiração guiada diariamente e usou a técnica de madrugada (15/11). Trabalhado: ___. Combinado: ___.'],
-];
-
-function Copilot({ store }) {
-  return store.demo ? <CopilotDemo /> : <CopilotReal patients={store.patients.filter((p) => p.record)} />;
-}
-
-// Real patients: evolution computed from the app logs (first period vs the latest), plus keyword answers.
-function CopilotReal({ patients }) {
-  const [pid, setPid] = useState(patients[0]?.id);
-  const [q, setQ] = useState('');
-  const [chat, setChat] = useState([]);
-  const p = patients.find((x) => x.id === pid) ?? patients[0];
-  if (!p) {
-    return (
-      <section className="panel empty-state">
-        <span className="ico-tile tile-ai"><Icon name="sparkles" size={22} /></span>
-        <h1 className="d-title">Copilot de evolução</h1>
-        <p className="muted">Aparece quando algum paciente vinculado começar a registrar no app.</p>
-      </section>
-    );
-  }
-  const ev = evolution(p.record);
-  const ask = (e) => {
-    e.preventDefault();
-    const text = q.trim();
-    if (!text) return;
-    setChat((c) => [...c, { who: 'me', text }, { who: 'ai', text: answer(text, p.record) }]);
-    setQ('');
-  };
-  const mm = (k) => { const [y, m] = k.split('-'); return `${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+m - 1]}/${y.slice(2)}`; };
-  return (
-    <>
-      <div className="copilot-hero">
-        <div className="row-between wrap gap12">
-          <div className="row gap10"><Avatar name={p.name} size={36} tone={2} /><div><p className="row-title">{p.name}</p><p className="xs on-dark-muted">{ev.spanDays ? `${ev.spanDays} dias de registros` : 'Sem registros de humor ainda'}</p></div></div>
-          <select className="select" value={p.id} onChange={(e) => { setPid(e.target.value); setChat([]); }} aria-label="Paciente">{patients.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        </div>
-        <h1 className="hero-title mt16">Evolução pelos registros do app</h1>
-        <p className="on-dark-muted">Primeiros {ev.win} dias comparados aos últimos {ev.win} · contas automáticas, sem modelo de IA</p>
-        <div className="hero-kpis">
-          {[['Humor médio', ev.first.moodAvg, ev.last.moodAvg, (v) => num(v)], ['Hábitos cumpridos', ev.first.habitPct, ev.last.habitPct, (v) => `${v}%`], ['Sono médio', ev.first.sleepAvg, ev.last.sleepAvg, fmtH], ['Emoções difíceis', ev.first.hard, ev.last.hard, String]].map(([l, a, b, f]) => (
-            <div key={l}><p className="xs on-dark-muted">{l}</p><p className="hero-v">{a == null ? '—' : f(a)} → {b == null ? '—' : f(b)}</p></div>
-          ))}
-        </div>
-      </div>
-      <div className="grid-2-1">
-        <section className="panel">
-          <div className="panel-head"><div><h2 className="h3">Humor médio por mês</h2><p className="muted sm">Escala de 1 a 6 registrada no app</p></div></div>
-          {ev.monthly.length >= 2
-            ? <LineChart points={ev.monthly.map(([, v]) => v)} height={180} labels={ev.monthly.map(([k]) => mm(k))} />
-            : <p className="muted pad center">O gráfico aparece com pelo menos 2 meses de registros.</p>}
-        </section>
-        <div className="stack">
-          <section className="panel">
-            <h2 className="h3 row gap6 ok-txt"><Icon name="trend" size={18} /> Sinais de melhoria</h2>
-            <ul className="bullets ok">{ev.better.map((t) => <li key={t}>{t}</li>)}{!ev.better.length && <li className="muted">Nada a destacar ainda.</li>}</ul>
-          </section>
-          <section className="panel">
-            <h2 className="h3 row gap6 warn-txt"><Icon name="alert" size={18} /> Pontos de atenção</h2>
-            <ul className="bullets warn">{ev.worse.map((t) => <li key={t}>{t}</li>)}{!ev.worse.length && <li className="muted">Nada a destacar ainda.</li>}</ul>
-          </section>
-        </div>
-      </div>
-      <section className="panel ai-panel">
-        <div className="panel-head"><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Sugestões para a próxima sessão</h2><span className="xs muted">A partir da pauta e dos registros · a decisão é sempre sua</span></div>
-        <ol className="suggest">{ev.suggestions.map((t) => <li key={t}>{t}</li>)}{!ev.suggestions.length && <li className="muted">Sem sugestões: poucos registros ainda.</li>}</ol>
-      </section>
-      {chat.length > 0 && (
-        <section className="panel chat" aria-live="polite">
-          {chat.map((m, i) => <div key={i} className={`msg ${m.who}`}>{m.who === 'ai' && <Icon name="sparkles" size={14} />}<p>{m.text}</p></div>)}
-        </section>
-      )}
-      <form className="ask" onSubmit={ask}>
-        <div className="ask-box">
-          <Icon name="sparkles" size={18} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Pergunte sobre ${p.name.split(' ')[0]}: humor, sono, hábitos, remédios…`} aria-label="Pergunte ao Copilot" />
-          <button className="btn-icon" aria-label="Enviar" disabled={!q.trim()}><Icon name="send" size={16} /></button>
-        </div>
-        <div className="row gap8 wrap">
-          {['Resuma a semana', 'Como está o sono?', 'E os hábitos?', 'Quais emoções aparecem?'].map((x) => <button type="button" key={x} className="chip-sel" onClick={() => setQ(x)}>{x}</button>)}
-        </div>
-      </form>
-    </>
-  );
-}
-
-function CopilotDemo() {
-  const [q, setQ] = useState('');
-  const [chat, setChat] = useState([]);
-  const [thinking, setThinking] = useState(false);
-  const ask = (e) => {
-    e.preventDefault();
-    const text = q.trim();
-    if (!text || thinking) return;
-    setChat((c) => [...c, { who: 'me', text }]);
-    setQ('');
-    setThinking(true);
-    setTimeout(() => {
-      const hit = ANSWERS.find(([re]) => re.test(text));
-      setChat((c) => [...c, { who: 'ai', text: hit ? hit[1] : 'Nos registros da Camila não encontrei algo específico sobre isso. Tente perguntar sobre sessões, escalas, sono, hábitos ou humor.' }]);
-      setThinking(false);
-    }, 700);
-  };
-  return (
-    <>
-      <div className="copilot-hero">
-        <div className="row-between wrap gap12">
-          <div className="row gap10"><Avatar name="Camila Rocha" size={36} tone={2} /><div><p className="row-title">Camila Rocha</p><p className="xs on-dark-muted">Mar – Nov 2026</p></div></div>
-          <span className="chip chip-glass"><Icon name="lock" size={12} /> Processado localmente</span>
-        </div>
-        <p className="eyebrow on-dark mt16">Copilot de evolução</p>
-        <h1 className="hero-title">Camila está evoluindo</h1>
-        <p className="on-dark-muted">Primeiros 3 meses (mar–mai) comparados aos últimos 3 (set–nov) · sessões, escalas e registros do app</p>
-        <div className="hero-kpis">
-          {[['Humor médio no app', '2,7 → 3,6', '+0,9 ponto'], ['GAD-7', '14 → 9', 'De moderada para leve'], ['Hábitos cumpridos', '41% → 68%', '+27 p.p.'], ['Faltas', '3 → 0', 'Presença em todas as sessões']].map(([l, v, s]) => (
-            <div key={l}><p className="xs on-dark-muted">{l}</p><p className="hero-v">{v}</p><p className="xs hero-delta"><Icon name="trend" size={12} /> {s}</p></div>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid-2-1">
-        <section className="panel">
-          <div className="panel-head"><div><h2 className="h3">Humor médio por mês</h2><p className="muted sm">Escala de 1 a 6 registrada pela paciente no app · marcos anotados por você</p></div></div>
-          <div className="milestones"><span style={{ left: '12.5%' }}><Icon name="pill" size={12} /> Início da medicação</span><span style={{ left: '62.5%' }}><Icon name="flag" size={12} /> Mudança de emprego</span></div>
-          <LineChart points={MONTHLY} height={180} marks={[1, 5]} bands={[[0, 2, 'band1'], [6, 8, 'band2']]} labels={['mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov']} />
-          <div className="legend row gap16 mt8"><span className="row gap6"><span className="lg lg-band1" /> Primeiros 3 meses</span><span className="row gap6"><span className="lg lg-band2" /> Últimos 3 meses</span></div>
-        </section>
-        <div className="stack">
-          <section className="panel">
-            <h2 className="h3 row gap6 ok-txt"><Icon name="trend" size={18} /> Sinais de melhoria</h2>
-            <ul className="bullets ok">
-              <li>Semanas com humor médio abaixo de 3 caíram de 9 para 2.</li>
-              <li>GAD-7 saiu da faixa moderada (14) para a leve (9).</li>
-              <li>A respiração guiada virou rotina: 12 dias seguidos, usada inclusive de madrugada.</li>
-              <li>Recuperou-se da queda de agosto em cerca de 5 semanas.</li>
-            </ul>
-          </section>
-          <section className="panel">
-            <h2 className="h3 row gap6 warn-txt"><Icon name="alert" size={18} /> Pontos de atenção</h2>
-            <ul className="bullets warn">
-              <li>Quedas de humor coincidem com situações de trabalho: em agosto e de novo após 13/11.</li>
-              <li>“Dormir antes das 23h” é o hábito com menor adesão: 43% dos dias no trimestre.</li>
-              <li>Despertares de madrugada voltaram a aparecer no diário nesta semana.</li>
-            </ul>
-          </section>
-        </div>
-      </div>
-
-      <section className="panel ai-panel">
-        <div className="panel-head"><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Sugestões para a sessão de quinta</h2><span className="xs muted">Apoio ao raciocínio clínico · a decisão é sempre sua</span></div>
-        <ol className="suggest">
-          <li><b>Retomar o conflito com o gestor:</b> é o item prioritário da pauta e coincide com a queda de humor desde 13/11.</li>
-          <li><b>Revisar a rotina de sono:</b> dormir cedo é o hábito de menor adesão e os despertares voltaram.</li>
-          <li><b>Explorar o uso da respiração antes de reuniões</b>, já que a própria paciente relata que ajudou em 15/11.</li>
-        </ol>
-      </section>
-
-      {chat.length > 0 && (
-        <section className="panel chat" aria-live="polite">
-          {chat.map((m, i) => <div key={i} className={`msg ${m.who}`}>{m.who === 'ai' && <Icon name="sparkles" size={14} />}<p>{m.text}</p></div>)}
-          {thinking && <div className="msg ai"><Icon name="sparkles" size={14} /><p className="muted">Lendo os registros…</p></div>}
-        </section>
-      )}
-      <form className="ask" onSubmit={ask}>
-        <div className="ask-box">
-          <Icon name="sparkles" size={18} />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Pergunte ao Copilot sobre a Camila…" aria-label="Pergunte ao Copilot" />
-          <button className="btn-icon" aria-label="Enviar" disabled={!q.trim() || thinking}><Icon name="send" size={16} /></button>
-        </div>
-        <div className="row gap8 wrap">
-          {['Resuma as últimas 4 sessões', 'O que mudou desde a última escala?', 'Rascunhe a evolução de hoje'].map((s) => (
-            <button type="button" key={s} className="chip-sel" onClick={() => setQ(s)}>{s}</button>
-          ))}
-        </div>
-      </form>
     </>
   );
 }

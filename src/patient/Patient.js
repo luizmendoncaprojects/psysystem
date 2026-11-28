@@ -188,6 +188,67 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
 
       {past && <p className="readonly-note"><Icon name="lock" size={14} /> Dias anteriores são só para consulta. Se esqueceu, ainda dá para registrar o sono.</p>}
 
+      {perms.humor && (past ? (!dayMood ? <p className="hint">Sem registro de humor neste dia.</p> : 
+        <section className="card row gap12">
+          <MoodFace v={dayMood} size={40} />
+          <div><p className="muted sm">Humor registrado</p><p className="row-title">{MOODS_LABEL[dayMood - 1]}</p></div>
+        </section>
+      ) : (
+        mood ? (
+          <section className="card row gap12">
+            <MoodFace v={mood} size={40} />
+            <div className="grow"><p className="muted sm row gap4"><Icon name="lock" size={12} /> Humor de hoje registrado</p><p className="row-title">{MOODS_LABEL[mood - 1]}</p></div>
+            {perms.emocoes && <button className="link" onClick={() => go('humor')}>Emoções</button>}
+          </section>
+        ) : <MoodCard setMood={setMood} />
+      ))}
+
+      {items.length > 0 && (
+        <section className="card f-routine">
+          <div className="row-between">
+            <div>
+              <h2 className="h3">{past ? 'Rotina do dia' : 'Rotina de hoje'}</h2>
+              <p className="muted sm">{done} de {items.length} concluídos</p>
+            </div>
+            {!past && <button className="link" onClick={() => go('rotina')}>Ver rotina</button>}
+          </div>
+          <div className="progress"><span style={{ width: `${(done / items.length) * 100}%` }} /></div>
+          <ul className="list">
+            {items.map((it) => (
+              <li key={it.id} className="list-row">
+                <span className={`ico-tile ${it.med ? 'tile-med' : 'tile-habit'}`}><Icon name={it.icon} size={18} /></span>
+                <div className="grow">
+                  <p className={`row-title ${it.done ? 'strike' : ''}`}>{it.t}</p>
+                  <p className="muted sm">{it.s}</p>
+                </div>
+                <button className={`check ${it.done ? 'on' : ''}`} disabled={past || it.done} aria-label={`Marcar ${it.t}`} aria-pressed={it.done} onClick={() => toggle(it)}>
+                  <Icon name="check" size={16} stroke={2.4} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {perms.sono && <Sleep key={off} off={off} value={sleep[off]} onSave={(v) => setSleep({ ...sleep, [off]: v })} />}
+
+      {perms.agua && <Water water={dayWater} setWater={setWater} readOnly={past} goal={waterGoal} cup={patientPrefs.cupMl ?? 250} />}
+
+      {perms.emocoes && !past && (
+        <section className="card f-emotion">
+          <h2 className="h3">Qual a emoção do dia?</h2>
+          <p className="muted sm">Escolha a que mais marcou o seu dia.</p>
+          <div className="chips mt12" role="radiogroup" aria-label="Emoção do dia">
+            {DAY_EMOTIONS.map((f) => (
+              <button key={f} role="radio" aria-checked={dayEmotion === f} disabled={!!dayEmotion && dayEmotion !== f} className={`chip-sel neg ${dayEmotion === f ? 'on' : ''}`} onClick={() => !dayEmotion && pickEmotion(f)}>
+                {dayEmotion === f && <Icon name="check" size={14} stroke={2.4} />}{f}
+              </button>
+            ))}
+          </div>
+          {dayEmotion && <p className="saved-note"><Icon name="lock" size={14} /> Registrada. Amanhã você escolhe de novo.</p>}
+        </section>
+      )}
+
       {/* shortcut: only demo has a scheduled session; real sessions come once the agenda is stored in Supabase */}
       {!past && !demo && (
         <section className="card row gap12">
@@ -216,67 +277,6 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
           </button>
         )}
       </section>}
-
-      {perms.humor && (past ? (!dayMood ? <p className="hint">Sem registro de humor neste dia.</p> : 
-        <section className="card row gap12">
-          <MoodFace v={dayMood} size={40} />
-          <div><p className="muted sm">Humor registrado</p><p className="row-title">{MOODS_LABEL[dayMood - 1]}</p></div>
-        </section>
-      ) : (
-        mood ? (
-          <section className="card row gap12">
-            <MoodFace v={mood} size={40} />
-            <div className="grow"><p className="muted sm row gap4"><Icon name="lock" size={12} /> Humor de hoje registrado</p><p className="row-title">{MOODS_LABEL[mood - 1]}</p></div>
-            {perms.emocoes && <button className="link" onClick={() => go('humor')}>Emoções</button>}
-          </section>
-        ) : <MoodCard setMood={setMood} />
-      ))}
-
-      {perms.sono && <Sleep key={off} off={off} value={sleep[off]} onSave={(v) => setSleep({ ...sleep, [off]: v })} />}
-
-      {perms.agua && <Water water={dayWater} setWater={setWater} readOnly={past} goal={waterGoal} cup={patientPrefs.cupMl ?? 250} />}
-
-      {items.length > 0 && (
-        <section className="card">
-          <div className="row-between">
-            <div>
-              <h2 className="h3">{past ? 'Rotina do dia' : 'Rotina de hoje'}</h2>
-              <p className="muted sm">{done} de {items.length} concluídos</p>
-            </div>
-            {!past && <button className="link" onClick={() => go('rotina')}>Ver rotina</button>}
-          </div>
-          <div className="progress"><span style={{ width: `${(done / items.length) * 100}%` }} /></div>
-          <ul className="list">
-            {items.map((it) => (
-              <li key={it.id} className="list-row">
-                <span className={`ico-tile ${it.med ? 'tile-med' : 'tile-habit'}`}><Icon name={it.icon} size={18} /></span>
-                <div className="grow">
-                  <p className={`row-title ${it.done ? 'strike' : ''}`}>{it.t}</p>
-                  <p className="muted sm">{it.s}</p>
-                </div>
-                <button className={`check ${it.done ? 'on' : ''}`} disabled={past || it.done} aria-label={`Marcar ${it.t}`} aria-pressed={it.done} onClick={() => toggle(it)}>
-                  <Icon name="check" size={16} stroke={2.4} />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {perms.emocoes && !past && (
-        <section className="card">
-          <h2 className="h3">Qual a emoção do dia?</h2>
-          <p className="muted sm">Escolha a que mais marcou o seu dia.</p>
-          <div className="chips mt12" role="radiogroup" aria-label="Emoção do dia">
-            {DAY_EMOTIONS.map((f) => (
-              <button key={f} role="radio" aria-checked={dayEmotion === f} disabled={!!dayEmotion && dayEmotion !== f} className={`chip-sel neg ${dayEmotion === f ? 'on' : ''}`} onClick={() => !dayEmotion && pickEmotion(f)}>
-                {dayEmotion === f && <Icon name="check" size={14} stroke={2.4} />}{f}
-              </button>
-            ))}
-          </div>
-          {dayEmotion && <p className="saved-note"><Icon name="lock" size={14} /> Registrada. Amanhã você escolhe de novo.</p>}
-        </section>
-      )}
     </>
   );
 }
@@ -285,7 +285,7 @@ function Hoje({ demo, patientPrefs, perms, mood, setMood, go, meds, taken, setTa
 function MoodCard({ setMood }) {
   const [pick, setPick] = useState(null);
   return (
-    <section className="card card-soft">
+    <section className="card card-soft f-mood">
       <div className="row-between">
         <h2 className="h3">Como você está agora?</h2>
         <span className="pill-mini">5 seg</span>
@@ -304,7 +304,7 @@ function Sleep({ off, value, onSave }) {
   const dur = (toMin(d.wake) - toMin(d.bed) + 1440) % 1440;
   const Q = ['Péssimo', 'Ruim', 'Ok', 'Bom', 'Ótimo'];
   return (
-    <section className="card">
+    <section className="card f-sleep">
       <div className="row-between">
         <div className="row gap12">
           <span className="ico-tile tile-sleep"><Icon name="moon" size={18} /></span>
@@ -343,7 +343,7 @@ function Sleep({ off, value, onSave }) {
 function Water({ water, setWater, readOnly, goal, cup = 250 }) {
   const cups = Math.ceil(goal / cup);
   return (
-    <section className="card">
+    <section className="card f-water">
       <div className="row-between">
         <div className="row gap12">
           <span className="ico-tile tile-water"><Icon name="drop" size={18} /></span>
@@ -484,7 +484,7 @@ function Habitos({ perms, patientPrefs, water, setWater, waterGoal, habits: h, s
       {perms.agua && <Water water={water} setWater={setWater} goal={waterGoal} cup={patientPrefs.cupMl ?? 250} />}
       {perms.habitos && h.length === 0 && <p className="hint">Sua psicóloga ainda não definiu hábitos.</p>}
       {perms.habitos && h.map((x, i) => (
-        <section key={x.id} className="card habit">
+        <section key={x.id} className="card habit f-routine">
           <div className="row gap12">
             <span className="ico-tile tile-habit"><Icon name={x.icon} size={18} /></span>
             <div className="grow">
@@ -627,7 +627,7 @@ function DiarioTab({ store, perms, sub, setSub }) {
   };
   return (
     <>
-      <Header title="Diário" right={cur === 'diario' && <button className="fab-sm" aria-label="Nova entrada" onClick={() => setWriting({ t: '' })}><Icon name="plus" size={20} /></button>} />
+      <Header title="Diário" right={cur === 'diario' && <button className="btn-icon" aria-label="Nova entrada" onClick={() => setWriting({ t: '' })}><Icon name="plus" size={20} /></button>} />
       {opts.length > 1 && <Segmented options={opts} value={cur} onChange={setSub} />}
       {cur === 'diario' ? <Diario entries={entries} onWrite={setWriting} /> : <Pauta topics={topics} setTopics={setTopics} />}
       {writing && <EntryModal prefill={writing} canAgenda={perms.pauta} onClose={() => setWriting(null)} onSave={save} />}
@@ -660,7 +660,11 @@ function Diario({ entries, onWrite }) {
         <p className="prompt-q">{PROMPT}</p>
         <button className="btn-secondary" onClick={() => onWrite({ t: '', q: PROMPT })}><Icon name="pen" size={16} /> Escrever sobre isso</button>
       </section>
-      <Segmented small options={[['todos', 'Todos'], ['comp', 'Compartilhados'], ['eu', 'Só eu']]} value={f} onChange={setF} />
+      <div className="filter-chips" role="radiogroup" aria-label="Filtrar entradas">
+        {[['todos', 'Todos'], ['comp', 'Compartilhados'], ['eu', 'Só eu']].map(([k, l]) => (
+          <button key={k} role="radio" aria-checked={f === k} className={`chip-sel sm ${f === k ? 'on' : ''}`} onClick={() => setF(k)}>{l}</button>
+        ))}
+      </div>
       {list.map((e) => (
         <article key={e.id} className="card entry">
           <div className="row-between">

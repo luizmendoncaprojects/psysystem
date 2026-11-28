@@ -1,0 +1,42 @@
+/* ============ Auth: login, sign-up, link code ============
+   Desktop: a dark brand column and the form. Mobile: the form alone. */
+.login-desk { min-height: 100vh; display: grid; grid-template-columns: minmax(380px, 46%) 1fr; background: var(--bg); }
+.stage > .login-desk { width: 100%; }
+.login-hero { position: relative; overflow: hidden; background: color-mix(in srgb, var(--accent) 24%, #16141d); color: #fff; padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; }
+.login-hero .brand { padding: 0; }
+.hero-body { display: flex; flex-direction: column; gap: 22px; max-width: 460px; }
+.login-hero .hero-title { font-size: clamp(28px, 2.8vw, 38px); line-height: 1.15; }
+.login-points { display: flex; flex-direction: column; gap: 12px; margin-top: 18px; }
+.login-points li { display: flex; gap: 10px; align-items: center; color: rgba(255, 255, 255, .8); font-size: 15px; }
+/* product preview: a real slice of the panel, not a decoration */
+.hero-card { background: var(--surface); color: var(--ink); border-radius: var(--r-lg); padding: 18px; display: flex; flex-direction: column; gap: 10px; max-width: 360px; }
+.hero-card-title { font-weight: 650; font-size: 14.5px; }
+.hero-moods { display: flex; justify-content: space-between; padding: 2px 0 6px; }
+.hero-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13.5px; padding: 9px 12px; border-radius: var(--r-md); background: var(--surface-2); color: var(--ink-2); }
+.hero-row span { display: inline-flex; align-items: center; gap: 6px; }
+.hero-row b { color: var(--ink); }
+.hero-row.accent { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
+
+.login-main { display: grid; place-items: center; align-content: center; padding: 32px 16px; }
+.login-col { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 20px; }
+.login-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+.login-title { font-size: 26px; font-weight: 700; letter-spacing: -.025em; line-height: 1.2; margin: 6px 0 4px; }
+.login-form .field input { width: 100%; min-height: var(--h-lg); font-size: 15px; }
+.login-form .link.center { align-self: center; }
+.login-foot { display: flex; align-items: flex-start; justify-content: center; text-align: left; gap: 6px; margin-top: 4px; }
+.login-foot svg { flex-shrink: 0; margin-top: 2px; }
+.login-brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; margin-bottom: 8px; }
+.brand-mark.lg { width: 40px; height: 40px; border-radius: var(--r-md); color: #fff; }
+.pw { position: relative; display: block; }
+.pw input { padding-right: 46px !important; }
+.pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; display: grid; place-items: center; color: var(--muted); border-radius: var(--r-sm); }
+.pw-toggle:hover { color: var(--ink); }
+.consent { display: flex; gap: 10px; align-items: flex-start; color: var(--ink-2); }
+.consent input { margin-top: 3px; width: 18px; height: 18px; accent-color: var(--accent); flex-shrink: 0; }
+
+@media (min-width: 861px) { .login-col .login-brand { display: none; } }
+@media (max-width: 860px) {
+  .login-desk { grid-template-columns: 1fr; }
+  .login-hero { display: none; }
+  .login-main { align-content: start; padding: calc(env(safe-area-inset-top, 0px) + 32px) 20px 32px; }
+}

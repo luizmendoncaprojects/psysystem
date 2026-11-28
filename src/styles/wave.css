@@ -1,0 +1,77 @@
+/* ============ Brand direction "Onda" (preview: active only in ?demo, via html[data-brand="wave"]) ============
+   One motif from the name, used where it carries meaning:
+   1. each feature has its own color, shown as a wavy thread on its card and on its icon tile;
+   2. the logo is a wave;
+   3. dark surfaces carry a faint wave texture instead of a flat fill;
+   4. "now" on the agenda is a wave, not a ruler. */
+[data-brand="wave"] {
+  --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4 Q6 0.5 12 4 T24 4' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  --wave-field: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='36' viewBox='0 0 120 36'%3E%3Cg fill='none' stroke='white' stroke-opacity='.07' stroke-width='1.5'%3E%3Cpath d='M0 9 Q15 1 30 9 T60 9 T90 9 T120 9'/%3E%3Cpath d='M0 27 Q15 19 30 27 T60 27 T90 27 T120 27'/%3E%3C/g%3E%3C/svg%3E");
+
+  /* feature colors: humor, sono, água, remédios, rotina, emoções */
+  --f-mood: #e07a5f;
+  --f-sleep: #5b5bd6;
+  --f-water: #2a8bc7;
+  --f-med: #b85a3a;
+  --f-routine: #1f8a78;
+  --f-emotion: #c0567d;
+}
+[data-brand="wave"] .theme-dark {
+  --f-mood: #f09a80; --f-sleep: #9a9af0; --f-water: #7cc0ea; --f-med: #e8957a; --f-routine: #6fcdb9; --f-emotion: #e79abb;
+}
+
+/* 1. feature thread: a wave across the top of the card, in the feature's color */
+[data-brand="wave"] .card[class*="f-"] { position: relative; overflow: hidden; padding-top: 22px; }
+[data-brand="wave"] .card[class*="f-"]::before {
+  content: ''; position: absolute; top: 8px; left: 18px; width: 48px; height: 8px;
+  background: var(--f); -webkit-mask: var(--wave) repeat-x left center / 24px 8px; mask: var(--wave) repeat-x left center / 24px 8px;
+}
+[data-brand="wave"] .f-mood { --f: var(--f-mood); }
+[data-brand="wave"] .f-sleep { --f: var(--f-sleep); }
+[data-brand="wave"] .f-water { --f: var(--f-water); }
+[data-brand="wave"] .f-routine { --f: var(--f-routine); }
+[data-brand="wave"] .f-emotion { --f: var(--f-emotion); }
+[data-brand="wave"] .f-med { --f: var(--f-med); }
+/* weekly tiles on the patient page carry the same feature color */
+[data-brand="wave"] .tile[class*="f-"] { border-top: 3px solid var(--f); }
+[data-brand="wave"] .tile[class*="f-"] .mini-line path { stroke: var(--f); }
+[data-brand="wave"] .card-soft.f-mood { background: color-mix(in srgb, var(--f-mood) 6%, var(--surface)); }
+
+/* icon tiles take the same feature colors, so a color always means the same thing */
+[data-brand="wave"] .tile-sleep { background: color-mix(in srgb, var(--f-sleep) 14%, var(--surface)); color: var(--f-sleep); }
+[data-brand="wave"] .tile-water { background: color-mix(in srgb, var(--f-water) 14%, var(--surface)); color: var(--f-water); }
+[data-brand="wave"] .tile-med { background: color-mix(in srgb, var(--f-med) 14%, var(--surface)); color: var(--f-med); }
+[data-brand="wave"] .tile-habit { background: color-mix(in srgb, var(--f-routine) 14%, var(--surface)); color: var(--f-routine); }
+[data-brand="wave"] .f-routine .progress span { background: var(--f-routine); }
+[data-brand="wave"] .f-routine .day.done .day-dot { background: var(--f-routine); }
+[data-brand="wave"] .f-routine .day.today .day-dot { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--f-routine); }
+[data-brand="wave"] .f-routine .day.today:not(.done) .day-dot { border-color: var(--f-routine); box-shadow: none; }
+[data-brand="wave"] .f-water .water-btn, [data-brand="wave"] .f-water .cup.full { background: var(--f-water); border-color: var(--f-water); }
+[data-brand="wave"] .chip-sel.neg.on { background: var(--f-emotion); border-color: var(--f-emotion); }
+
+/* 2. logo: a wave in the mark */
+[data-brand="wave"] .brand-mark svg { display: none; }
+[data-brand="wave"] .brand-mark::before {
+  content: ''; width: 70%; height: 30%;
+  background: #fff; -webkit-mask: var(--wave) repeat-x left center / 50% 100%; mask: var(--wave) repeat-x left center / 50% 100%;
+}
+
+/* 3. dark surfaces: faint wave field anchored to the bottom */
+[data-brand="wave"] .side,
+[data-brand="wave"] .session-card,
+[data-brand="wave"] .kpi-action,
+[data-brand="wave"] .copilot-hero,
+[data-brand="wave"] .login-hero { background-image: var(--wave-field); background-repeat: repeat-x; background-position: left bottom; background-size: 120px 36px; }
+[data-brand="wave"] .side { background-size: 120px 36px; background-position: left calc(100% - 4px); }
+
+/* 4. "now" on the day list is a wave */
+[data-brand="wave"] .now-line::after {
+  height: 8px; opacity: 1; background: var(--accent);
+  -webkit-mask: var(--wave) repeat-x left center / 16px 6px; mask: var(--wave) repeat-x left center / 16px 6px;
+}
+
+/* greeting carries a short wave signature */
+[data-brand="wave"] .p-title::after, [data-brand="wave"] .page-head .d-title::after {
+  content: ''; display: block; width: 36px; height: 8px; margin-top: 6px;
+  background: var(--accent); -webkit-mask: var(--wave) repeat-x left center / 18px 6px; mask: var(--wave) repeat-x left center / 18px 6px;
+}

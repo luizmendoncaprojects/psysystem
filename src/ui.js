@@ -52,7 +52,7 @@ const P = {
   eyeOff: 'M9.9 4.2A10 10 0 0 1 12 4c6.5 0 10 8 10 8a17 17 0 0 1-2.2 3.2M6.6 6.6A17 17 0 0 0 2 12s3.5 8 10 8a9.7 9.7 0 0 0 5.4-1.6M2 2l20 20M14.1 14.1a3 3 0 1 1-4.2-4.2',
   copy: 'M8 8h12v12H8zM16 8V4H4v12h4',
   trend: 'm22 7-8.5 8.5-5-5L2 17M16 7h6v6',
-  logo: 'M4 20c3-8 6-12 8-12s3 4 8 12M8 20c1.5-3 3-5 4-5s2.5 2 4 5',
+  logo: 'M4.5 10.5Q7.1 7.5 9.75 10.5T15 10.5T20.25 10.5M4.5 15.4Q7.1 12.4 9.75 15.4T15 15.4T20.25 15.4', // same two waves as public/favicon.svg
 };
 
 export function Icon({ name, size = 20, stroke = 1.8, className, label }) {
@@ -138,11 +138,33 @@ export function Toggle({ on, onChange, label }) {
 }
 
 // Simple line chart in SVG. points: number[] (1–5 scale), marks: indexes with vertical lines.
+// Smooth SVG path through [x, y] points (monotone cubic, Fritsch–Carlson): rounded like a wave, but the curve
+// never goes above or below the real values between two days, so it does not invent peaks.
+export function smoothPath(pts) {
+  const n = pts.length;
+  const f = (v) => v.toFixed(1);
+  if (n < 2) return n ? `M${f(pts[0][0])} ${f(pts[0][1])}` : '';
+  const dx = []; const m = [];
+  for (let i = 0; i < n - 1; i++) { dx[i] = pts[i + 1][0] - pts[i][0]; m[i] = (pts[i + 1][1] - pts[i][1]) / (dx[i] || 1); }
+  const t = pts.map((_, i) => {
+    if (i === 0) return m[0];
+    if (i === n - 1) return m[n - 2];
+    if (m[i - 1] * m[i] <= 0) return 0; // local peak or valley: flat tangent
+    return (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
+  });
+  let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = dx[i] / 3;
+    d += ` C${f(pts[i][0] + h)} ${f(pts[i][1] + t[i] * h)} ${f(pts[i + 1][0] - h)} ${f(pts[i + 1][1] - t[i + 1] * h)} ${f(pts[i + 1][0])} ${f(pts[i + 1][1])}`;
+  }
+  return d;
+}
+
 export function LineChart({ points, height = 140, marks = [], bands = [], labels = [], min = 1, max = 6, area = true }) {
   const w = 600, h = height, pad = 8;
   const x = (i) => pad + (i * (w - pad * 2)) / (points.length - 1);
   const y = (v) => pad + ((max - v) * (h - pad * 2)) / (max - min);
-  const d = points.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+  const d = smoothPath(points.map((v, i) => [x(i), y(v)]));
   return (
     <div className="linechart">
       <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" role="img" aria-label="Gráfico de humor">
@@ -175,7 +197,64 @@ export function PageHead({ title, sub, actions }) {
 export function Spark({ d }) {
   if (!d) return <span className="muted sm">Sem registros</span>;
   const w = 80, h = 26, x = (i) => (i * w) / (d.length - 1), y = (v) => h - 2 - ((v - 1) * (h - 4)) / 5;
-  return <svg width={w} height={h} className="spark" aria-hidden="true"><path d={d.map((v, i) => `${i ? 'L' : 'M'}${x(i)} ${y(v)}`).join(' ')} /></svg>;
+  return <svg width={w} height={h} className="spark" aria-hidden="true"><path d={smoothPath(d.map((v, i) => [x(i), y(v)]))} /></svg>;
+}
+
+/* ---------- Date picker ---------- */
+// value/min/max: 'YYYY-MM-DD'. A button with the date opens a month calendar; Escape or a click outside closes it.
+const MONTHS_PT = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+const iso = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+export function DateField({ label, value, onChange, min, max }) {
+  const [open, setOpen] = useState(false);
+  const [view, setView] = useState(() => (value || iso(new Date().getFullYear(), new Date().getMonth(), 1)).slice(0, 7));
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e) => { if (e.type === 'keydown' ? e.key === 'Escape' : !ref.current?.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    ref.current?.querySelector('.dp-day.on, .dp-day:not(:disabled)')?.focus();
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [open]);
+  const [y, m] = view.split('-').map(Number);
+  const first = new Date(y, m - 1, 1).getDay(); // 0 = Sunday
+  const days = new Date(y, m, 0).getDate();
+  const today = iso(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  const shift = (n) => { const d = new Date(y, m - 1 + n, 1); setView(iso(d.getFullYear(), d.getMonth(), 1).slice(0, 7)); };
+  const pick = (d) => { onChange(d); setOpen(false); };
+  const show = (d) => (d ? d.split('-').reverse().join('/') : 'dd/mm/aaaa');
+  return (
+    <div className="dp" ref={ref}>
+      <span className="dp-label">{label}</span>
+      <button type="button" className="dp-btn" aria-haspopup="dialog" aria-expanded={open} onClick={() => { if (value) setView(value.slice(0, 7)); setOpen(!open); }}>
+        <Icon name="calendar" size={15} /> {show(value)}
+      </button>
+      {open && (
+        <div className="dp-pop" role="dialog" aria-label={`${label}: escolher data`}>
+          <div className="dp-head">
+            <button type="button" className="icon-btn" aria-label="Mês anterior" onClick={() => shift(-1)}><Icon name="chevL" size={16} /></button>
+            <b>{MONTHS_PT[m - 1][0].toUpperCase()}{MONTHS_PT[m - 1].slice(1)} de {y}</b>
+            <button type="button" className="icon-btn" aria-label="Próximo mês" onClick={() => shift(1)}><Icon name="chevR" size={16} /></button>
+          </div>
+          <div className="dp-grid">
+            {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((d, i) => <span key={i} className="dp-wd" aria-hidden="true">{d}</span>)}
+            {Array.from({ length: first }, (_, i) => <span key={`e${i}`} />)}
+            {Array.from({ length: days }, (_, i) => {
+              const d = iso(y, m - 1, i + 1);
+              const off = (min && d < min) || (max && d > max);
+              return (
+                <button type="button" key={d} disabled={off} aria-label={new Date(`${d}T12:00:00`).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })} aria-pressed={d === value}
+                  className={`dp-day ${d === value ? 'on' : ''} ${d === today ? 'today' : ''}`} onClick={() => pick(d)}>{i + 1}</button>
+              );
+            })}
+          </div>
+          <div className="dp-foot">
+            <button type="button" className="link sm" disabled={(min && today < min) || (max && today > max)} onClick={() => pick(today)}>Hoje</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 /* ---------- Modal ---------- */

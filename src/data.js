@@ -1,3 +1,4 @@
+import { CID11 } from './cid11';
 // Demo data shared by the patient app and the psychologist panel.
 
 // [key, label, description, icon]
@@ -41,54 +42,40 @@ export const INITIAL_HABITS = [
 ];
 export const habitSub = (h, withReminder = true) => [h.detail, h.freq.toLowerCase(), withReminder && h.reminder && `lembrete às ${h.reminder}`].filter(Boolean).join(' · ');
 
-// CID-10 codes the psychologist can assign. '' = not defined.
-export const CIDS = [
-  ['', 'Não definido'],
-  ['F41.1', 'Ansiedade generalizada'],
-  ['F41.0', 'Transtorno de pânico'],
-  ['F41.2', 'Transtorno misto ansioso e depressivo'],
-  ['F32.0', 'Episódio depressivo leve'],
-  ['F32.1', 'Episódio depressivo moderado'],
-  ['F33.1', 'Transtorno depressivo recorrente, episódio moderado'],
-  ['F40.1', 'Fobia social'],
-  ['F42', 'Transtorno obsessivo-compulsivo'],
-  ['F43.1', 'Transtorno de estresse pós-traumático'],
-  ['F43.2', 'Transtorno de adaptação'],
-  ['F50.2', 'Bulimia nervosa'],
-  ['F60.3', 'Transtorno de personalidade emocionalmente instável'],
-  ['F90.0', 'TDAH'],
-  ['Z73.0', 'Esgotamento (burnout)'],
-];
-export const cidLabel = (c) => CIDS.find(([k]) => k === c)?.[1] ?? c;
+// CID-11 codes the psychologist can assign (official WHO table, src/cid11.js). '' = not defined.
+export const CID_TITLE = new Map(CID11);
+export const cidLabel = (c) => CID_TITLE.get(c) ?? c; // codes saved before CID-11 still show as typed
+// Suicide / self-harm risk: always the psychologist's own assessment, never inferred by the app.
+export const RISK_LABEL = 'Risco de suicídio / autolesão';
 
 const m = (s) => s.split('').map(Number); // mood string "34432..." → [3,4,4,3,2,...]
 // [id, name, age, status, last, next, appUse%, risk, mood14 | null, cid, mode]
 const ROWS = [
-  ['luiz', 'Luiz Mendonça', 34, 'Ativo', '12/11', '19/11 · 18:00', 92, 'Baixo', '34434432323223', 'F41.1', 'Online'],
-  ['camila', 'Camila Rocha', 32, 'Ativa', '12/11', '19/11 · 18:00', 92, 'Baixo', '34434432323223', 'F41.1', 'Online'],
-  ['rafael', 'Rafael Nunes', 41, 'Ativo', '09/11', 'Hoje · 10:00', 64, 'Moderado', '22323323332333', 'F32.1', 'Presencial'],
-  ['beatriz', 'Beatriz Lima', 27, 'Ativa', '10/11', 'Hoje · 14:00', 88, 'Baixo', '33444344544454', 'F40.1', 'Online'],
-  ['juliana', 'Juliana Prado', 29, 'Ativa', '13/11', '20/11 · 09:00', 75, 'Baixo', '43344343443444', 'F43.2', 'Presencial'],
+  ['luiz', 'Luiz Mendonça', 34, 'Ativo', '12/11', '19/11 · 18:00', 92, 'Baixo', '34434432323223', '6B00', 'Online'],
+  ['camila', 'Camila Rocha', 32, 'Ativa', '12/11', '19/11 · 18:00', 92, 'Baixo', '34434432323223', '6B00', 'Online'],
+  ['rafael', 'Rafael Nunes', 41, 'Ativo', '09/11', 'Hoje · 10:00', 64, 'Moderado', '22323323332333', '6A70.1', 'Presencial'],
+  ['beatriz', 'Beatriz Lima', 27, 'Ativa', '10/11', 'Hoje · 14:00', 88, 'Baixo', '33444344544454', '6B04', 'Online'],
+  ['juliana', 'Juliana Prado', 29, 'Ativa', '13/11', '20/11 · 09:00', 75, 'Baixo', '43344343443444', '6B43', 'Presencial'],
   ['lucas', 'Lucas Ferreira', 46, 'Ativo', '11/11', 'Hoje · 16:00', 53, 'Não definido', '32332332333233', '', 'Online'],
   ['ana', 'Ana Clara Souza', 24, 'Ativa', '—', 'Hoje · 17:00', 0, 'Não definido', null, '', 'Presencial'],
-  ['pedro', 'Pedro Henrique Dias', 38, 'Ativo', '09/11', 'Hoje · 19:00', 71, 'Baixo', '33343344343434', 'Z73.0', 'Online'],
-  ['gustavo', 'Gustavo Reis', 52, 'Ativo', '10/11', '17/11 · 09:00', 46, 'Moderado', '22232232322323', 'F33.1', 'Presencial'],
-  ['sofia', 'Sofia Martins', 19, 'Ativa', '10/11', '17/11 · 11:00', 95, 'Baixo', '34444454445444', 'F90.0', 'Online'],
-  ['marcos', 'Marcos Vieira', 44, 'Ativo', '10/11', '17/11 · 18:00', 38, 'Moderado', '22322232233232', 'F43.1', 'Presencial'],
-  ['fernanda', 'Fernanda Lopes', 35, 'Ativa', '11/11', '18/11 · 08:00', 82, 'Baixo', '33434434443443', 'F41.0', 'Presencial'],
-  ['bruno', 'Bruno Castro', 31, 'Ativo', '11/11', '18/11 · 10:00', 67, 'Baixo', '33333434333434', 'F41.2', 'Online'],
-  ['larissa', 'Larissa Melo', 26, 'Ativa', '11/11', '18/11 · 18:00', 90, 'Alto', '21222122212112', 'F60.3', 'Presencial'],
-  ['diego', 'Diego Santos', 33, 'Ativo', '12/11', '19/11 · 10:00', 58, 'Baixo', '34333433343343', 'F42', 'Presencial'],
-  ['vinicius', 'Vinícius Araújo', 28, 'Ativo', '12/11', '19/11 · 16:00', 79, 'Baixo', '33444343444434', 'F32.0', 'Online'],
-  ['renata', 'Renata Alves', 47, 'Ativa', '13/11', '20/11 · 11:00', 61, 'Moderado', '23232323322332', 'F50.2', 'Presencial'],
-  ['carolina', 'Carolina Teixeira', 36, 'Ativa', '06/11', '23/11 · 15:00', 73, 'Baixo', '33343443434443', 'F41.1', 'Online'],
-  ['eduardo', 'Eduardo Pires', 58, 'Ativo', '05/11', '26/11 · 10:00', 22, 'Não definido', '33233323', 'F43.2', 'Presencial'],
-  ['isabela', 'Isabela Cardoso', 22, 'Ativa', '07/11', '21/11 · 14:00', 86, 'Baixo', '44344454444454', 'F40.1', 'Online'],
+  ['pedro', 'Pedro Henrique Dias', 38, 'Ativo', '09/11', 'Hoje · 19:00', 71, 'Baixo', '33343344343434', 'QD85', 'Online'],
+  ['gustavo', 'Gustavo Reis', 52, 'Ativo', '10/11', '17/11 · 09:00', 46, 'Moderado', '22232232322323', '6A71.1', 'Presencial'],
+  ['sofia', 'Sofia Martins', 19, 'Ativa', '10/11', '17/11 · 11:00', 95, 'Baixo', '34444454445444', '6A05', 'Online'],
+  ['marcos', 'Marcos Vieira', 44, 'Ativo', '10/11', '17/11 · 18:00', 38, 'Moderado', '22322232233232', '6B40', 'Presencial'],
+  ['fernanda', 'Fernanda Lopes', 35, 'Ativa', '11/11', '18/11 · 08:00', 82, 'Baixo', '33434434443443', '6B01', 'Presencial'],
+  ['bruno', 'Bruno Castro', 31, 'Ativo', '11/11', '18/11 · 10:00', 67, 'Baixo', '33333434333434', '6A73', 'Online'],
+  ['larissa', 'Larissa Melo', 26, 'Ativa', '11/11', '18/11 · 18:00', 90, 'Alto', '21222122212112', '6D11.5', 'Presencial'],
+  ['diego', 'Diego Santos', 33, 'Ativo', '12/11', '19/11 · 10:00', 58, 'Baixo', '34333433343343', '6B20', 'Presencial'],
+  ['vinicius', 'Vinícius Araújo', 28, 'Ativo', '12/11', '19/11 · 16:00', 79, 'Baixo', '33444343444434', '6A70.0', 'Online'],
+  ['renata', 'Renata Alves', 47, 'Ativa', '13/11', '20/11 · 11:00', 61, 'Moderado', '23232323322332', '6B81', 'Presencial'],
+  ['carolina', 'Carolina Teixeira', 36, 'Ativa', '06/11', '23/11 · 15:00', 73, 'Baixo', '33343443434443', '6B00', 'Online'],
+  ['eduardo', 'Eduardo Pires', 58, 'Ativo', '05/11', '26/11 · 10:00', 22, 'Não definido', '33233323', '6B43', 'Presencial'],
+  ['isabela', 'Isabela Cardoso', 22, 'Ativa', '07/11', '21/11 · 14:00', 86, 'Baixo', '44344454444454', '6B04', 'Online'],
   ['mateus', 'Mateus Ribeiro', 30, 'Ativo', '04/11', '25/11 · 19:00', 49, 'Baixo', '33323333433333', '', 'Online'],
-  ['patricia', 'Patrícia Gomes', 50, 'Ativa', '03/11', '24/11 · 09:00', 69, 'Baixo', '34343443443434', 'F32.0', 'Presencial'],
-  ['thiago', 'Thiago Moreira', 35, 'Em pausa', '21/10', '—', 12, 'Não definido', null, 'F43.2', 'Online'],
-  ['leticia', 'Letícia Barros', 40, 'Em pausa', '14/10', '—', 0, 'Baixo', null, 'F41.1', 'Presencial'],
-  ['rodrigo', 'Rodrigo Nascimento', 43, 'Alta', '30/10', '—', 0, 'Baixo', null, 'F43.2', 'Online'],
+  ['patricia', 'Patrícia Gomes', 50, 'Ativa', '03/11', '24/11 · 09:00', 69, 'Baixo', '34343443443434', '6A70.0', 'Presencial'],
+  ['thiago', 'Thiago Moreira', 35, 'Em pausa', '21/10', '—', 12, 'Não definido', null, '6B43', 'Online'],
+  ['leticia', 'Letícia Barros', 40, 'Em pausa', '14/10', '—', 0, 'Baixo', null, '6B00', 'Presencial'],
+  ['rodrigo', 'Rodrigo Nascimento', 43, 'Alta', '30/10', '—', 0, 'Baixo', null, '6B43', 'Online'],
 ];
 const RICH = ['camila', 'luiz']; // demo patients with a full plan
 const DEFAULT_HABITS = [{ id: 1, icon: 'wind', name: 'Respiração guiada', detail: '5 min', freq: 'Todos os dias', reminder: '08:00', week: [1, 0, 1, 1, 0, 1, 0] }];

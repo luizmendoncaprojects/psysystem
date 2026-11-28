@@ -1,9 +1,6 @@
 import { useState } from 'react';
-import { Icon, Avatar, Segmented, Toggle, LineChart, MoodFace, Chip, RISK, STATUS, PageHead, Spark, Modal, toast, downloadText, usePaged, Pager } from '../ui';
-import { FEATURES, CIDS, cidLabel, EMOTIONS, HABIT_ICONS, habitSub, fmtL, ME } from '../data';
-import { LinkCard } from './Modals';
-import { stats, summary, dailyMood, lastDays, withLog, dayKey, fmtDay, sleepMin, fmtH } from '../records';
-import { api } from '../api';
+import { Icon, Avatar, Segmented, Toggle, Chip, RISK, STATUS, PageHead, Spark, Modal, toast, downloadText, usePaged, Pager } from '../ui';
+import { FEATURES, cidLabel, EMOTIONS, HABIT_ICONS, habitSub, fmtL, ME } from '../data';
 
 const nextKey = (p) => (p.next === '—' ? 'zz' : p.next.startsWith('Hoje') ? `0${p.next}` : p.next.split(' · ').map((s) => s.split('/').reverse().join('')).join(''));
 const permCount = (p) => Object.values(p.perms).filter(Boolean).length;
@@ -16,7 +13,7 @@ export function PatientTable({ patients, open, compact }) {
         <thead>
           <tr>
             <th>Paciente</th><th>CID</th><th>Status</th>{!compact && <th>Última</th>}<th>Próxima</th>
-            <th>Humor · 14 dias</th><th>Uso do app</th>{!compact && <th>Recursos no app</th>}<th>Risco (manual)</th>
+            <th>Humor · 14 dias</th><th>Uso do app</th>{!compact && <th>Recursos no app</th>}<th title="Risco de suicídio / autolesão · sua avaliação">Risco (suicídio)</th>
           </tr>
         </thead>
         <tbody>
@@ -63,15 +60,15 @@ export function PatientList({ patients, open, onNew }) {
       />
       <section className="panel">
         <div className="filters">
-          <label className="search grow-search"><Icon name="search" size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome ou CID" aria-label="Buscar por nome ou CID" /></label>
+          <label className="search grow-search"><Icon name="search" size={16} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Nome ou CID" aria-label="Buscar por nome ou CID" /></label>
           <Segmented small value={st} onChange={setSt} options={[['todos', 'Todos', patients.length], ['ativos', 'Ativos', count(isActive)], ['Em pausa', 'Em pausa', count((p) => p.status === 'Em pausa')], ['Alta', 'Alta', count((p) => p.status === 'Alta')]]} />
           <select className="select" value={risk} onChange={(e) => setRisk(e.target.value)} aria-label="Filtrar por risco">
-            <option value="">Todos os riscos</option>
+            <option value="">Risco de suicídio: todos</option>
             {Object.keys(RISK).map((r) => <option key={r}>{r}</option>)}
           </select>
           <select className="select" value={cid} onChange={(e) => setCid(e.target.value)} aria-label="Filtrar por CID">
             <option value="">Todos os CIDs</option>
-            {CIDS.filter(([k]) => k).map(([k, l]) => <option key={k} value={k}>{k} · {l}</option>)}
+            {[...new Set(patients.map((p) => p.cid).filter(Boolean))].sort().map((k) => <option key={k} value={k}>{k} · {cidLabel(k)}</option>)}
           </select>
           <select className="select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Ordenar">
             <option value="nome">Ordenar: nome</option>
@@ -83,271 +80,13 @@ export function PatientList({ patients, open, onNew }) {
           {rows.length ? <PatientTable patients={pg.rows} open={open} /> : <p className="muted center pad">Nenhum paciente encontrado.</p>}
           <Pager p={pg} noun="pacientes" />
         </div>
-        <p className="note"><Icon name="lock" size={14} /> CID e risco são definidos por você e nunca aparecem no app do paciente.</p>
+        <p className="note"><Icon name="lock" size={14} /> CID-11 e risco de suicídio/autolesão são definidos por você e nunca aparecem no app do paciente.</p>
       </section>
     </>
   );
 }
 
-/* ---------- PROFILE ---------- */
-export function PatientProfile({ p, store, a }) {
-  const [tab, setTab] = useState('visao');
-  const up = (patch) => store.updatePatient(p.id, patch);
-  const newRx = p.rx.filter((r) => r.status === 'Nova').length;
-  return (
-    <>
-      <div className="patient-head">
-        <Avatar name={p.name} size={64} />
-        <div className="grow">
-          <div className="row gap8 wrap"><h1 className="d-title">{p.name}</h1><Chip kind={STATUS[p.status]}>{p.status}</Chip></div>
-          <p className="muted">{p.age} anos · {p.mode} · última sessão {p.last} · próxima {p.next}</p>
-          <p className="xs muted mt8 row gap6"><span className={`dot ${p.use ? 'ok' : ''}`} /> {p.use ? `App conectado · uso de ${p.use}% nos últimos 14 dias` : 'App ainda não usado'}</p>
-        </div>
-        <div className="def-box">
-          <label className="xs muted" htmlFor="cid">CID · definido por você</label>
-          <select id="cid" className="select" value={p.cid} onChange={(e) => up({ cid: e.target.value })}>
-            {CIDS.map(([k, l]) => <option key={k} value={k}>{k ? `${k} · ${l}` : l}</option>)}
-          </select>
-        </div>
-        <div className="def-box">
-          <label className="xs muted" htmlFor="risk">Risco · definido por você</label>
-          <select id="risk" className={`select risk-${RISK[p.risk]}`} value={p.risk} onChange={(e) => up({ risk: e.target.value })}>
-            {Object.keys(RISK).map((r) => <option key={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="row gap8">
-          <button className="btn-secondary" onClick={() => a.newSession({ pid: p.id })}><Icon name="calendar" size={16} /> Agendar</button>
-          <button className="btn-secondary" onClick={() => a.openEditor({ pid: p.id, tpl: 'declaracao' })}><Icon name="file" size={16} /> Gerar documento</button>
-          <button className="btn-primary" onClick={() => a.run(p.id)}><Icon name="video" size={16} /> Iniciar sessão</button>
-        </div>
-      </div>
-      {p.link && !p.link.linked && (
-        <section className="panel link-banner">
-          <div className="row gap8"><Icon name="clock" size={16} /><b className="sm">Aguardando o paciente criar a conta e digitar o código</b></div>
-          <LinkCard compact patient={p} onNewCode={async () => {
-            try { const { patient } = await api.patients.newCode(p.id); up({ link: { linked: false, code: patient.code, url: patient.link, expiresAt: patient.codeExpiresAt } }); toast('Novo código gerado; o anterior parou de valer'); } catch (e) { toast(e.message, 'warn'); }
-          }} />
-        </section>
-      )}
-      <div className="tabs-line" role="tablist">
-        {[['visao', 'Visão geral'], ['plano', 'Plano no app'], ['remedios', 'Remédios e receitas', newRx], ['permissoes', 'Permissões do app']].map(([k, l, n]) => (
-          <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
-            {l}{n > 0 && <span className="tab-badge">{n}</span>}
-          </button>
-        ))}
-      </div>
-      {tab === 'visao' && (store.demo ? (p.id === ME ? <OverviewFull p={p} store={store} /> : <OverviewBasic p={p} />) : <OverviewReal p={p} />)}
-      {tab === 'plano' && <Plano p={p} up={up} />}
-      {tab === 'remedios' && <RemediosReceitas p={p} up={up} />}
-      {tab === 'permissoes' && <Permissoes p={p} up={up} />}
-    </>
-  );
-}
-
-/* ---------- OVERVIEW ---------- */
-const MOOD30 = [4, 4, 3, 4, 3, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 4, 3, 4, 4, 3, 4, 4, 3, 3, 2, 3, 2, 2, 3, 3];
-const SERIES = {
-  humor: { points: MOOD30, min: 1, max: 6, label: 'Humor médio do dia (1 a 6)' },
-  habitos: { points: [2, 3, 3, 2, 3, 3, 2, 3, 3, 3, 2, 3, 2, 3, 3, 2, 3, 3, 2, 2, 3, 2, 2, 1, 2, 2, 1, 2, 2, 1], min: 0, max: 3, label: 'Hábitos cumpridos no dia (de 3)' },
-  remedios: { points: [3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3], min: 0, max: 3, label: 'Doses registradas no dia (de 3)' },
-};
-
-function OverviewBasic({ p }) {
-  return (
-    <div className="grid-2-1">
-      <section className="panel">
-        <div className="panel-head"><div><h2 className="h3">Humor no app · 14 dias</h2><p className="muted sm">Escala de 1 a 6 registrada pelo paciente</p></div></div>
-        {p.mood ? <LineChart points={p.mood} height={160} /> : <p className="muted pad center">Ainda não há registros no app.</p>}
-      </section>
-      <section className="panel">
-        <h2 className="h3">Plano no app</h2>
-        <ul className="meds">
-          <li><Icon name="checks" size={16} /><span className="grow">Hábitos</span><span className="muted sm">{p.habits.length}</span></li>
-          <li><Icon name="pill" size={16} /><span className="grow">Remédios</span><span className="muted sm">{p.meds.length}</span></li>
-          <li><Icon name="drop" size={16} /><span className="grow">Meta de água</span><span className="muted sm">{p.perms.agua ? fmtL(p.waterGoal) : 'desligada'}</span></li>
-          <li><Icon name="sliders" size={16} /><span className="grow">Recursos ligados</span><span className="muted sm">{permCount(p)} de {FEATURES.length}</span></li>
-        </ul>
-        <p className="note"><Icon name="sparkles" size={14} /> O resumo pré-sessão aparece após 2 semanas de registros no app.</p>
-      </section>
-    </div>
-  );
-}
-
-function OverviewFull({ p, store }) {
-  const [metric, setMetric] = useState('humor');
-  const nights = Object.entries(store.sleep).sort((a, b) => b[0] - a[0]).slice(0, 5);
-  const avg = nights.length ? nights.reduce((s, [, n]) => s + sleepMin(n), 0) / nights.length : 0;
-  return (
-    <div className="grid-2-1">
-      <div className="stack">
-        <section className="panel ai-panel">
-          <div className="panel-head">
-            <div><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Resumo pré-sessão</h2><p className="muted sm">Semana de 09 a 15/11 · gerado localmente às 06:00</p></div>
-            <Chip kind="ai">Rascunho da IA</Chip>
-          </div>
-          <ul className="ai-list">
-            <li>Humor médio caiu de <b>3,9 para 3,1</b>, com a queda concentrada a partir de sexta (13/11).</li>
-            <li>Emoção mais registrada: <b>ansiedade (9 vezes)</b>, quase sempre ligada a trabalho. Calma aparece 6 vezes, sobretudo após a respiração.</li>
-            <li>Sono médio de <b>{fmtH(avg)}</b> com despertares de madrugada em 3 noites; “Dormir antes das 23h” cumprido em 3 de 7 dias.</li>
-            <li>Trouxe 3 assuntos para a pauta. O prioritário é uma conversa difícil com o gestor, também citada no diário.</li>
-          </ul>
-          <div className="ai-foot">
-            <p className="xs muted row gap6"><Icon name="alert" size={14} /> Revise antes de usar. A IA organiza os registros do app; não define diagnóstico nem risco.</p>
-            <button className="btn-secondary sm-btn" onClick={() => copyText([...document.querySelectorAll('.ai-list li')].map((li) => '- ' + li.textContent).join('\n'), 'Resumo copiado para colar na evolução')}><Icon name="copy" size={14} /> Copiar para a evolução</button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <div><h2 className="h3">Acompanhamento pelo app</h2><p className="muted sm">Últimos 30 dias · linhas verticais marcam as sessões</p></div>
-            <Segmented small value={metric} onChange={setMetric} options={[['humor', 'Humor'], ['habitos', 'Hábitos'], ['remedios', 'Remédios']]} />
-          </div>
-          <p className="xs muted">{SERIES[metric].label}</p>
-          <LineChart key={metric} points={SERIES[metric].points} min={SERIES[metric].min} max={SERIES[metric].max} height={170} marks={[4, 11, 18, 25]} labels={['18/10', '25/10', '01/11', '08/11', 'Hoje']} />
-          <div className="mini-stats four">
-            <div><p className="muted sm">Hábitos cumpridos</p><p className="kpi-value sm-kpi">64%</p></div>
-            <div><p className="muted sm">Adesão aos remédios</p><p className="kpi-value sm-kpi">96%</p><p className="xs muted">só você vê</p></div>
-            <div><p className="muted sm">Água · média diária</p><p className="kpi-value sm-kpi">{fmtL(1530)}</p><p className="xs muted">meta {fmtL(p.waterGoal)}</p></div>
-            <div><p className="muted sm">Sono médio</p><p className="kpi-value sm-kpi">{fmtH(avg)}</p></div>
-          </div>
-        </section>
-
-        <Emocoes counts={store.emotions} />
-      </div>
-
-      <div className="stack">
-        <section className="panel">
-          <h2 className="h3">Pauta trazida pela paciente</h2>
-          <p className="muted sm">Para a sessão de quinta, 19/11 · 18:00</p>
-          <ul className="pauta">
-            <li className="prio"><Icon name="flag" size={14} /><div><p className="row-title">Conversa difícil com o gestor na sexta</p><p className="xs prio-txt">Marcado como prioridade</p></div></li>
-            <li><Icon name="flag" size={14} /><p className="row-title">Voltou a acordar de madrugada</p></li>
-            <li><Icon name="flag" size={14} /><p className="row-title">Viagem de dezembro</p></li>
-          </ul>
-        </section>
-        <section className="panel">
-          <h2 className="h3">Sono · últimas noites</h2>
-          <ul className="sleep-list">
-            {nights.map(([off, n]) => (
-              <li key={off}>
-                <span className="sm grow">{+off === 0 ? 'Hoje' : +off === -1 ? 'Ontem' : `Há ${-off} dias`}</span>
-                <span className="sm muted">{n.bed}–{n.wake}</span>
-                <span className="sleep-bar"><span style={{ width: `${Math.min(100, (sleepMin(n) / 540) * 100)}%` }} /></span>
-                <b className="sm">{fmtH(sleepMin(n))}</b>
-                <span className="xs muted">{n.wakeups ? `${n.wakeups} desp.` : '—'}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-        <section className="panel">
-          <div className="row-between"><h2 className="h3">Diário compartilhado</h2><span className="muted sm">5 de 9</span></div>
-          {[['Dom, 15/11 · 04:20', 'Acordei às 4h de novo', 'Fiquei repassando a conversa de sexta. Fiz a respiração e consegui voltar a dormir lá pelas 5h.'],
-            ['Sex, 13/11 · 19:45', 'Reunião com o gestor', 'Saí da reunião com o coração acelerado. Quero levar isso para a sessão.']].map(([d, t, b]) => (
-            <article key={d} className="mini-entry">
-              <p className="xs muted row gap6"><MoodFace v={2} size={16} /> {d} · humor: mal</p>
-              <p className="row-title">{t}</p>
-              <p className="sm">{b}</p>
-            </article>
-          ))}
-        </section>
-      </div>
-    </div>
-  );
-}
-
-// Real patients: everything below is computed from what the patient logged in the app (src/records.js).
-const METRICS = [['humor', 'Humor'], ['habitos', 'Hábitos'], ['remedios', 'Remédios']];
-function OverviewReal({ p }) {
-  const [metric, setMetric] = useState('humor');
-  const rec = p.record ?? {};
-  const log = p.log ?? withLog(rec);
-  const days = lastDays(30);
-  const series = {
-    humor: { points: dailyMood(log, days), min: 1, max: 6, label: 'Humor médio do dia (1 a 6)' },
-    habitos: { points: days.map((d) => (log.habits[d] ?? []).length), min: 0, max: Math.max(1, p.habits.length), label: `Hábitos cumpridos no dia (de ${p.habits.length})` },
-    remedios: { points: days.map((d) => Object.keys(log.meds[d] ?? {}).length), min: 0, max: Math.max(1, p.meds.length), label: `Doses marcadas no dia (de ${p.meds.length})` },
-  }[metric];
-  // Days without data are drawn at the previous value so the line stays readable; empty series show a hint.
-  const filled = series.points.reduce((acc, v) => [...acc, v ?? acc[acc.length - 1] ?? null], []).map((v) => v ?? series.min);
-  const hasData = series.points.some((v) => v != null && (metric === 'humor' || v > 0));
-  const s = stats(rec, { days: 14 });
-  const lines = summary(rec);
-  const nights = lastDays(7).reverse().map((d) => [d, log.sleep[d]]).filter(([, n]) => n);
-  const shared = (p.diary ?? []).filter((e) => e.shared).slice(0, 5);
-  return (
-    <div className="grid-2-1">
-      <div className="stack">
-        <section className="panel ai-panel">
-          <div className="panel-head">
-            <div><h2 className="h3 row gap6"><Icon name="sparkles" size={18} /> Resumo pré-sessão</h2><p className="muted sm">Últimos 7 dias comparados aos 7 anteriores · calculado dos registros do app</p></div>
-          </div>
-          <ul className="ai-list">{lines.map((l) => <li key={l}>{l}</li>)}</ul>
-          <div className="ai-foot">
-            <p className="xs muted row gap6"><Icon name="alert" size={14} /> Contas automáticas sobre os registros. Não definem diagnóstico nem risco.</p>
-            <button className="btn-secondary sm-btn" onClick={() => copyText(lines.map((l) => `- ${l}`).join('\n'), 'Resumo copiado para colar na evolução')}><Icon name="copy" size={14} /> Copiar para a evolução</button>
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-head">
-            <div><h2 className="h3">Acompanhamento pelo app</h2><p className="muted sm">Últimos 30 dias</p></div>
-            <Segmented small value={metric} onChange={setMetric} options={METRICS} />
-          </div>
-          <p className="xs muted">{series.label}</p>
-          {hasData
-            ? <LineChart key={metric} points={filled} min={series.min} max={series.max} height={170} labels={[fmtDay(days[0]), fmtDay(days[10]), fmtDay(days[20]), 'Hoje']} />
-            : <p className="muted pad center">Sem registros neste período.</p>}
-          <div className="mini-stats four">
-            <div><p className="muted sm">Hábitos cumpridos · 14 dias</p><p className="kpi-value sm-kpi">{s.habitPct == null ? '—' : `${s.habitPct}%`}</p></div>
-            <div><p className="muted sm">Adesão aos remédios</p><p className="kpi-value sm-kpi">{s.medPct == null ? '—' : `${s.medPct}%`}</p><p className="xs muted">só você vê</p></div>
-            <div><p className="muted sm">Água · média diária</p><p className="kpi-value sm-kpi">{s.waterAvg == null ? '—' : fmtL(s.waterAvg)}</p><p className="xs muted">meta {fmtL(p.waterGoal)}</p></div>
-            <div><p className="muted sm">Sono médio</p><p className="kpi-value sm-kpi">{fmtH(s.sleepAvg)}</p></div>
-          </div>
-        </section>
-
-        {Object.keys(s.emotions).length > 0 ? <Emocoes counts={s.emotions} /> : <section className="panel"><h2 className="h3">Emoções registradas · 14 dias</h2><p className="muted sm mt8">Nenhuma emoção registrada ainda.</p></section>}
-      </div>
-
-      <div className="stack">
-        <section className="panel">
-          <h2 className="h3">Pauta trazida pelo paciente</h2>
-          <ul className="pauta">
-            {(p.topics ?? []).map((t) => <li key={t.t} className={t.prio ? 'prio' : ''}><Icon name="flag" size={14} /><div><p className="row-title">{t.t}</p>{t.prio && <p className="xs prio-txt">Marcado como prioridade</p>}</div></li>)}
-            {!(p.topics ?? []).length && <li className="muted sm">Nenhum assunto anotado.</li>}
-          </ul>
-        </section>
-        <section className="panel">
-          <h2 className="h3">Sono · últimas noites</h2>
-          <ul className="sleep-list">
-            {nights.map(([d, n]) => (
-              <li key={d}>
-                <span className="sm grow">{d === dayKey() ? 'Hoje' : fmtDay(d)}</span>
-                <span className="sm muted">{n.bed}–{n.wake}</span>
-                <span className="sleep-bar"><span style={{ width: `${Math.min(100, (sleepMin(n) / 540) * 100)}%` }} /></span>
-                <b className="sm">{fmtH(sleepMin(n))}</b>
-                <span className="xs muted">{n.wakeups ? `${n.wakeups} desp.` : '—'}</span>
-              </li>
-            ))}
-            {!nights.length && <li className="muted sm">Sem registros de sono nesta semana.</li>}
-          </ul>
-        </section>
-        <section className="panel">
-          <h2 className="h3">Diário compartilhado</h2>
-          {shared.map((e) => (
-            <article key={e.id} className="mini-entry">
-              <p className="xs muted row gap6"><MoodFace v={e.mood} size={16} /> {e.d}</p>
-              <p className="row-title">{e.t}</p>
-              <p className="sm">{e.b}</p>
-            </article>
-          ))}
-          {!shared.length && <p className="muted sm mt8">Nada compartilhado ainda. Só aparecem os registros que o paciente escolher compartilhar.</p>}
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function Emocoes({ counts }) {
+export function Emocoes({ counts }) {
   const rows = Object.entries(counts).sort((a, b) => b[1] - a[1]);
   const max = rows[0]?.[1] || 1;
   const pos = rows.filter(([e]) => EMOTIONS.pos.includes(e)).reduce((s, r) => s + r[1], 0);
@@ -380,7 +119,7 @@ function Emocoes({ counts }) {
 /* ---------- PLANO NO APP (hábitos, lembretes, água) ---------- */
 const FREQS = ['Todos os dias', 'Dias úteis', '5 vezes por semana', '3 vezes por semana', '1 vez por semana'];
 
-function Plano({ p, up }) {
+export function Plano({ p, up }) {
   const blank = { icon: 'wind', name: '', detail: '', freq: 'Todos os dias', reminder: '08:00' };
   const [draft, setDraft] = useState(null);
   const setHabit = (id, patch) => up({ habits: p.habits.map((h) => (h.id === id ? { ...h, ...patch } : h)) });
@@ -463,7 +202,7 @@ function Plano({ p, up }) {
 }
 
 /* ---------- REMÉDIOS E RECEITAS ---------- */
-function RemediosReceitas({ p, up }) {
+export function RemediosReceitas({ p, up }) {
   const blank = { name: '', time: '08:00', instr: '', by: '' };
   const [draft, setDraft] = useState(null);
   const [showRx, setShowRx] = useState(null);
@@ -557,7 +296,7 @@ Enviada em ${showRx.date}`)}><Icon name="download" size={16} /> Baixar</button>}
 }
 
 /* ---------- PERMISSÕES ---------- */
-function Permissoes({ p, up }) {
+export function Permissoes({ p, up }) {
   const set = (k, v) => up({ perms: { ...p.perms, [k]: v } });
   return (
     <section className="panel perms-panel">
@@ -583,6 +322,6 @@ function Permissoes({ p, up }) {
 }
 
 // Clipboard write with a toast; falls back to a warning if the browser refuses.
-function copyText(text, ok) {
+export function copyText(text, ok) {
   navigator.clipboard?.writeText(text).then(() => toast(ok), () => toast('Não foi possível copiar. Selecione o texto e copie.', 'warn'));
 }

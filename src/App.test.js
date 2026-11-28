@@ -26,7 +26,7 @@ test('psychologist turns off Diário and it disappears from the patient app', ()
   fireEvent.click(screen.getByRole('button', { name: /Pacientes/ }));
   fireEvent.change(screen.getByLabelText('Buscar por nome ou CID'), { target: { value: 'Luiz' } });
   fireEvent.click(screen.getByText('Luiz Mendonça'));
-  fireEvent.click(screen.getByRole('tab', { name: 'Permissões do app' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Permissões do app' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Diário' }));
   fireEvent.click(screen.getByRole('switch', { name: 'Assuntos da sessão' }));
   toApp();
@@ -168,8 +168,24 @@ test('real login (no demo data) starts with an empty panel and does not crash', 
   render(<App />);
   expect(await screen.findByText(/Nenhuma sessão hoje/)).toBeInTheDocument();
   expect(screen.queryByText('Rafael Nunes')).not.toBeInTheDocument();
-  for (const page of [/Agenda/, /Pacientes/, /Relatórios/, /Documentos e notas/, /Copilot/]) {
+  for (const page of [/Agenda/, /Pacientes/, /Relatórios/, /Documentos e notas/]) {
     fireEvent.click(screen.getAllByRole('button', { name: page })[0]);
   }
-  expect(screen.getByText(/Copilot de evolução/)).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Documentos oficiais' })).toBeInTheDocument();
+});
+
+test('patient page has section nav; Evolução and Prontuário work from the demo record', () => {
+  render(<App initialSessions={SESSIONS} />);
+  toPanel();
+  fireEvent.click(screen.getByRole('button', { name: /Pacientes/ }));
+  fireEvent.change(screen.getByLabelText('Buscar por nome ou CID'), { target: { value: 'Luiz' } });
+  fireEvent.click(screen.getByText('Luiz Mendonça'));
+  expect(screen.getByText('Antes da sessão')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Evolução' }));
+  expect(screen.getByText('Humor médio por mês')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Prontuário' }));
+  fireEvent.click(screen.getByRole('button', { name: /Novo registro/ }));
+  fireEvent.change(screen.getByLabelText('Evolução'), { target: { value: 'Sessão sobre o conflito no trabalho.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Salvar registro' }));
+  expect(screen.getByText('Sessão sobre o conflito no trabalho.')).toBeInTheDocument();
 });

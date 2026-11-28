@@ -8,7 +8,7 @@ process.env.SUPABASE_URL = 'http://127.0.0.1:9';
 process.env.SUPABASE_PUBLISHABLE_KEY = 'pk';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'sk';
 process.env.VERCEL = '1';
-const { handler } = await import('./app.mjs');
+const { handler, RECORD_KEYS, PANEL_ONLY } = await import('./app.mjs');
 
 // Vercel-like request: JSON body, x-forwarded-for, and req.socket === null.
 function vercelReq(path, body) {
@@ -35,4 +35,12 @@ test('signup on Vercel (no req.socket) validates instead of crashing', async () 
   const res = fakeRes();
   await handler(vercelReq('/api/auth/signup', { name: 'X' }), res);
   assert.equal(res.status, 400);
+});
+
+test('session notes and the psychologist topic priority stay out of the patient app', () => {
+  for (const k of ['clinical', 'notes', 'triage']) {
+    assert.ok(PANEL_ONLY.includes(k));
+    assert.ok(RECORD_KEYS.psicologa.includes(k));
+    assert.ok(!RECORD_KEYS.paciente.includes(k)); // the patient can neither read nor write them
+  }
 });
